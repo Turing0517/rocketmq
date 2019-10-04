@@ -110,7 +110,7 @@ public class BrokerOuterAPI {
 
         this.remotingClient.updateNameServerAddressList(lst);
     }
-
+    //遍历NameServer列表，Broker消息服务器依次向NameServer发送心跳包
     public List<RegisterBrokerResult> registerBrokerAll(
         final String clusterName,
         final String brokerAddr,
@@ -128,14 +128,22 @@ public class BrokerOuterAPI {
         if (nameServerAddressList != null && nameServerAddressList.size() > 0) {
 
             final RegisterBrokerRequestHeader requestHeader = new RegisterBrokerRequestHeader();
-            requestHeader.setBrokerAddr(brokerAddr);
-            requestHeader.setBrokerId(brokerId);
-            requestHeader.setBrokerName(brokerName);
-            requestHeader.setClusterName(clusterName);
-            requestHeader.setHaServerAddr(haServerAddr);
+            requestHeader.setBrokerAddr(brokerAddr);//broker地址
+            requestHeader.setBrokerId(brokerId);//brokerId,0:Master,大于0，slave
+            requestHeader.setBrokerName(brokerName);//broker名称
+            requestHeader.setClusterName(clusterName);//集群名称
+            requestHeader.setHaServerAddr(haServerAddr);//master地址初次请求时，该值为空，slave向NameServer注册后返回
             requestHeader.setCompressed(compressed);
 
             RegisterBrokerBody requestBody = new RegisterBrokerBody();
+            /**
+             * 主题配置，topicConfigWrapper内部封装的是TopicConfigManager中的topicConfigTable，内部存储的是Broker启动时默认的一些Topic
+             * MixAll.SELF_TEST_TOPIC，MixAll.DEFAULT_TOPIC(AutoCreateTopic-Enable=true),MixALL.BENCHMARK_TOPIC,
+             * MixAll.OFFSET_MOVED_EVENT,BrokerConfig#brokerClusterName,BrokertConfig#brokerName.Broker中Topic默认
+             * 存储在${Rocket_Home}/store/config/topic.json中
+             * 每一个请求，RocketMQ都会定义一个RequestCode,然后在服务端会对应的网络处理器（processor包中），只需整库搜索RequestCode，然后
+             * 在服务端逻辑。
+             */
             requestBody.setTopicConfigSerializeWrapper(topicConfigWrapper);
             requestBody.setFilterServerList(filterServerList);
             final byte[] body = requestBody.encode(compressed);
@@ -171,6 +179,21 @@ public class BrokerOuterAPI {
         return registerBrokerResultList;
     }
 
+    /**
+     * 发送心跳
+     * @param namesrvAddr
+     * @param oneway
+     * @param timeoutMills
+     * @param requestHeader
+     * @param body
+     * @return
+     * @throws RemotingCommandException
+     * @throws MQBrokerException
+     * @throws RemotingConnectException
+     * @throws RemotingSendRequestException
+     * @throws RemotingTimeoutException
+     * @throws InterruptedException
+     */
     private RegisterBrokerResult registerBroker(
         final String namesrvAddr,
         final boolean oneway,

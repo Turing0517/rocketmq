@@ -145,7 +145,8 @@ public class NamesrvStartup {
             controller.shutdown();
             System.exit(-3);
         }
-
+        //注册JVM钩子函数并启动服务器，以便监听Brokert、消息生产者的网络请求
+        //在JVM进程关闭之前，先将现场池关闭，及时释放资源
         Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(log, new Callable<Void>() {
             @Override
             public Void call() throws Exception {
