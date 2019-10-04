@@ -59,33 +59,49 @@ import org.apache.rocketmq.store.index.QueryOffsetResult;
 import org.apache.rocketmq.store.schedule.ScheduleMessageService;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * RocketMQ存储类
+ * RocketMQ存储路径为${ROCKET_HOME}/store
+ * 1.commitLog:消息存储目录
+ * 2.config：运行期间一些配置信息，主要包括：
+ *          consumerFileter.json :主题消息过滤信息
+ *          consumerOffer.json : 集群消费模式消息消费进度
+ *          delayOffset.json :延时消息队列拉取进度
+ *          subscriptionGroup.json : 消息消费组配置信息
+ *          topics.json : topic配置属性
+ * 3.consumerqueue：消息消费队列存储目录
+ * 4.index：消息索引文件存储目录
+ * 5.abort ： 如果存在abort文件说明Broker非正常关闭，该文件默认启动时创建，正常退出之前删除
+ * 6.checkpoint ： 文件检测点，存储commitlog文件最后一次刷盘时间戳，consumerqueue最后一次刷盘时间，index最后一次刷盘时间戳
+ */
 public class DefaultMessageStore implements MessageStore {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
-
+    //消息存储配置属性
     private final MessageStoreConfig messageStoreConfig;
     // CommitLog
+    //CommitLog文件的存储实现类
     private final CommitLog commitLog;
-
+    //消息队列存储缓存表，按消息主题分组
     private final ConcurrentMap<String/* topic */, ConcurrentMap<Integer/* queueId */, ConsumeQueue>> consumeQueueTable;
-
+    //消息队列文件ConsumerQueue刷盘线程
     private final FlushConsumeQueueService flushConsumeQueueService;
-
+    //清除CommitLog文件服务
     private final CleanCommitLogService cleanCommitLogService;
-
+    //清除ConsumerQueue文件服务
     private final CleanConsumeQueueService cleanConsumeQueueService;
-
+    //索引文件实现类
     private final IndexService indexService;
-
+    //MappedFile分配服务
     private final AllocateMappedFileService allocateMappedFileService;
-
+    //CommitLog消息分发，根据CommitLog文件构建ConsumerQueue，IndexFile文件
     private final ReputMessageService reputMessageService;
-
+    //存储HA机制
     private final HAService haService;
 
     private final ScheduleMessageService scheduleMessageService;
 
     private final StoreStatsService storeStatsService;
-
+    //消息堆内存缓存
     private final TransientStorePool transientStorePool;
 
     private final RunningFlags runningFlags = new RunningFlags();
@@ -94,15 +110,17 @@ public class DefaultMessageStore implements MessageStore {
     private final ScheduledExecutorService scheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("StoreScheduledThread"));
     private final BrokerStatsManager brokerStatsManager;
+    //消息拉取长轮询模式消息到达监听
     private final MessageArrivingListener messageArrivingListener;
+    //Broker配置属性
     private final BrokerConfig brokerConfig;
 
     private volatile boolean shutdown = true;
-
+    //文件刷盘检测点
     private StoreCheckpoint storeCheckpoint;
 
     private AtomicLong printTimes = new AtomicLong(0);
-
+    //CommitLog文件转发请求
     private final LinkedList<CommitLogDispatcher> dispatcherList;
 
     private RandomAccessFile lockFile;
@@ -352,11 +370,12 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     public PutMessageResult putMessage(MessageExtBrokerInner msg) {
+        //如果当前Broker停止工作，拒绝写入
         if (this.shutdown) {
             log.warn("message store has shutdown, so putMessage is forbidden");
             return new PutMessageResult(PutMessageStatus.SERVICE_NOT_AVAILABLE, null);
         }
-
+        //如果当前Broker为SLAVE角色，拒绝写入
         if (BrokerRole.SLAVE == this.messageStoreConfig.getBrokerRole()) {
             long value = this.printTimes.getAndIncrement();
             if ((value % 50000) == 0) {
@@ -365,7 +384,7 @@ public class DefaultMessageStore implements MessageStore {
 
             return new PutMessageResult(PutMessageStatus.SERVICE_NOT_AVAILABLE, null);
         }
-
+        //如果当前Rocket不支持写入，拒绝写入
         if (!this.runningFlags.isWriteable()) {
             long value = this.printTimes.getAndIncrement();
             if ((value % 50000) == 0) {
@@ -376,22 +395,26 @@ public class DefaultMessageStore implements MessageStore {
         } else {
             this.printTimes.set(0);
         }
-
+        //如果消息主题的长度超过127，拒绝写入
         if (msg.getTopic().length() > Byte.MAX_VALUE) {
             log.warn("putMessage message topic length too long " + msg.getTopic().length());
             return new PutMessageResult(PutMessageStatus.MESSAGE_ILLEGAL, null);
         }
-
+        //如果消息属性长度超过32767，拒绝写入
         if (msg.getPropertiesString() != null && msg.getPropertiesString().length() > Short.MAX_VALUE) {
             log.warn("putMessage message properties length too long " + msg.getPropertiesString().length());
             return new PutMessageResult(PutMessageStatus.PROPERTIES_SIZE_EXCEEDED, null);
         }
-
+        //如果pageCache繁忙，拒绝写入
         if (this.isOSPageCacheBusy()) {
             return new PutMessageResult(PutMessageStatus.OS_PAGECACHE_BUSY, null);
         }
-
+        /**
+         * 如果日志中包含"Message store is not writeable ，so putMessage is forbidden",出现这种日志最有可能是磁盘空间不足
+         * 在写ConsumerQueue，IndexFile文件出现错误时会拒绝消息再次写入
+         */
         long beginTime = this.getSystemClock().now();
+        //执行CommitLog写入
         PutMessageResult result = this.commitLog.putMessage(msg);
 
         long eclipseTime = this.getSystemClock().now() - beginTime;

@@ -41,6 +41,8 @@ import org.apache.rocketmq.store.schedule.ScheduleMessageService;
 
 /**
  * Store all metadata downtime for recovery, data protection reliability
+ * CommitLog文件存储逻辑
+ * TOTAOSIZE + 消息其他信息
  */
 public class CommitLog {
     // Message's MAGIC CODE daa320a7
@@ -373,23 +375,23 @@ public class CommitLog {
     }
 
     protected static int calMsgLength(int bodyLength, int topicLength, int propertiesLength) {
-        final int msgLen = 4 //TOTALSIZE
-            + 4 //MAGICCODE
-            + 4 //BODYCRC
-            + 4 //QUEUEID
-            + 4 //FLAG
-            + 8 //QUEUEOFFSET
-            + 8 //PHYSICALOFFSET
-            + 4 //SYSFLAG
-            + 8 //BORNTIMESTAMP
-            + 8 //BORNHOST
-            + 8 //STORETIMESTAMP
-            + 8 //STOREHOSTADDRESS
-            + 4 //RECONSUMETIMES
-            + 8 //Prepared Transaction Offset
-            + 4 + (bodyLength > 0 ? bodyLength : 0) //BODY
-            + 1 + topicLength //TOPIC
-            + 2 + (propertiesLength > 0 ? propertiesLength : 0) //propertiesLength
+        final int msgLen = 4 //TOTALSIZE 该消息条目总长度，4字节
+            + 4 //MAGICCODE 魔数 ，4字节。固定值0xdaa320a7
+            + 4 //BODYCRC 消息体crc校验码，4字节
+            + 4 //QUEUEID 消息消费队列ID，4字节
+            + 4 //FLAG 消息Flag，RocketMQ不做处理，供应用程序使用，默认4字节
+            + 8 //QUEUEOFFSET 消息在消费队列的偏移量，8字节
+            + 8 //PHYSICALOFFSET 消息在commitLog文件中的偏移量，8字节
+            + 4 //SYSFLAG 消息系统Flag，例如是否压缩，是否是事务消息等 4字节
+            + 8 //BORNTIMESTAMP 消息发送者IP，端口号，8字节
+            + 8 //BORNHOST 消息发送者IP，端口号 8字节
+            + 8 //STORETIMESTAMP 消息存储时间戳 8字节
+            + 8 //STOREHOSTADDRESS Broker服务器IP+端口号 8字节
+            + 4 //RECONSUMETIMES 消息重试次数 4 字节
+            + 8 //Prepared Transaction Offset 事务消息物理偏移量 8字节
+            + 4 + (bodyLength > 0 ? bodyLength : 0) //BODY 消息体长度 4字节 + 消息体内容，长度为bodyLength中的值
+            + 1 + topicLength //TOPIC 主题长度 以及主题内容
+            + 2 + (propertiesLength > 0 ? propertiesLength : 0) //propertiesLength 属性长度，属性内容
             + 0;
         return msgLen;
     }
@@ -534,10 +536,10 @@ public class CommitLog {
     }
 
     public PutMessageResult putMessage(final MessageExtBrokerInner msg) {
-        // Set the storage time
+        // Set the storage time 设置存储时间
         msg.setStoreTimestamp(System.currentTimeMillis());
         // Set the message body BODY CRC (consider the most appropriate setting
-        // on the client)
+        // on the client)设置消息的CRC
         msg.setBodyCRC(UtilAll.crc32(msg.getBody()));
         // Back to Results
         AppendMessageResult result = null;
@@ -551,6 +553,10 @@ public class CommitLog {
         if (tranType == MessageSysFlag.TRANSACTION_NOT_TYPE
             || tranType == MessageSysFlag.TRANSACTION_COMMIT_TYPE) {
             // Delay Delivery
+            /**
+             * 如果消息的延迟级别大于0，将消息的原主题名称与原消息队列ID存入消息属性中，用延迟消息主题SCHEDULE_TOPIC,消息队列ID
+             * 更新原先消息的主题与队列，这是并发消息消费重试关键的一步。
+             */
             if (msg.getDelayTimeLevel() > 0) {
                 if (msg.getDelayTimeLevel() > this.defaultMessageStore.getScheduleMessageService().getMaxDelayLevel()) {
                     msg.setDelayTimeLevel(this.defaultMessageStore.getScheduleMessageService().getMaxDelayLevel());
@@ -570,9 +576,10 @@ public class CommitLog {
         }
 
         long eclipseTimeInLock = 0;
+        //获取当前可以写入的Commitlog文件。物理文件以起始偏移量命名
         MappedFile unlockMappedFile = null;
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile();
-
+        //在写入CommitLog之前，先申请putMessageLock,也就是将消息存储到CommitLog文件中是串行的
         putMessageLock.lock(); //spin or ReentrantLock ,depending on store config
         try {
             long beginLockTimestamp = this.defaultMessageStore.getSystemClock().now();
@@ -580,6 +587,11 @@ public class CommitLog {
 
             // Here settings are stored timestamp, in order to ensure an orderly
             // global
+            /**
+             * 设置消息的存储时间，如果mappedFile为空，表明${ROCKET_HOME}/store/commitlog目录下不存在任何文件，说明本次消息
+             * 是第一次发送消息，用偏移量0创建第一个Commit文件，文件为00000000000000000000，如果文件创建失败，抛出CREATE_MAPPEDFILE_FAILED
+             * 很有可能是磁盘空间不足或权限不够了
+             */
             msg.setStoreTimestamp(beginLockTimestamp);
 
             if (null == mappedFile || mappedFile.isFull()) {
@@ -590,7 +602,7 @@ public class CommitLog {
                 beginTimeInLock = 0;
                 return new PutMessageResult(PutMessageStatus.CREATE_MAPEDFILE_FAILED, null);
             }
-
+            //将消息追加到文件末尾
             result = mappedFile.appendMessage(msg, this.appendMessageCallback);
             switch (result.getStatus()) {
                 case PUT_OK:
@@ -622,9 +634,10 @@ public class CommitLog {
             eclipseTimeInLock = this.defaultMessageStore.getSystemClock().now() - beginLockTimestamp;
             beginTimeInLock = 0;
         } finally {
+            //释放锁
             putMessageLock.unlock();
         }
-
+        //获取操作时长
         if (eclipseTimeInLock > 500) {
             log.warn("[NOTIFYME]putMessage in lock cost time(ms)={}, bodyLength={} AppendMessageResult={}", eclipseTimeInLock, msg.getBody().length, result);
         }
@@ -635,10 +648,13 @@ public class CommitLog {
 
         PutMessageResult putMessageResult = new PutMessageResult(PutMessageStatus.PUT_OK, result);
 
-        // Statistics
+        // Statistics 统计
         storeStatsService.getSinglePutMessageTopicTimesTotal(msg.getTopic()).incrementAndGet();
         storeStatsService.getSinglePutMessageTopicSizeTotal(topic).addAndGet(result.getWroteBytes());
-
+        /**
+         * DefaultAppendMessageCallback#doAppend只是将消息追加在内存中，需要根据同步刷盘还是异步刷盘方式，将内存中的数据持久化
+         * 到磁盘。然后执行HA主从同步。
+         */
         handleDiskFlush(result, putMessageResult, msg);
         handleHA(result, putMessageResult, msg);
 
@@ -827,6 +843,14 @@ public class CommitLog {
         return -1;
     }
 
+    /**
+     * 根据偏移量与消息长度查找消息。首先根据偏移找到所在的物理偏移量（找到文件），然后用offset与文件长度取余得到在文件内的偏移量
+     * 从该偏移量读取size长度的内容返回即可。
+     * 如果只根据消息偏移量查找消息，则首先找到文件内的偏移量，然后尝试读取4个字节获取消息的实际长度，最后读取指定字节即可。
+     * @param offset
+     * @param size
+     * @return
+     */
     public SelectMappedBufferResult getMessage(final long offset, final int size) {
         int mappedFileSize = this.defaultMessageStore.getMessageStoreConfig().getMapedFileSizeCommitLog();
         MappedFile mappedFile = this.mappedFileQueue.findMappedFileByOffset(offset, offset == 0);
@@ -837,6 +861,12 @@ public class CommitLog {
         return null;
     }
 
+    /**
+     * 获取当前CommitLog目录最小偏移量，首先获取目录下的第一个文件，如果该文件可用，则返回该文件的起始偏移量，否则返回下一个文件的起始
+     * 偏移量
+     * @param offset
+     * @return
+     */
     public long rollNextFile(final long offset) {
         int mappedFileSize = this.defaultMessageStore.getMessageStoreConfig().getMapedFileSizeCommitLog();
         return offset + mappedFileSize - offset % mappedFileSize;
@@ -1196,12 +1226,17 @@ public class CommitLog {
             // STORETIMESTAMP + STOREHOSTADDRESS + OFFSET <br>
 
             // PHY OFFSET
+            /**
+             * 创建全局唯一消息ID，消息ID有16字节，4字节IP + 4字节端口号 + 8字节消息偏移量
+             * 但为了消息ID的可读性，返回给应用程序的msgId为字符类型，可以通过UtilAll.bytes2string方法将msgId字节数组转换成字符串，
+             * 通过UtilAll.string2bytes方法将msgId字符串还原成16字节数组，从而根据提取消息偏移量，可以快速通过msgId找到消息内容
+             */
             long wroteOffset = fileFromOffset + byteBuffer.position();
-
             this.resetByteBuffer(hostHolder, 8);
             String msgId = MessageDecoder.createMessageId(this.msgIdMemory, msgInner.getStoreHostBytes(hostHolder), wroteOffset);
 
             // Record ConsumeQueue information
+            //获取该消息在消息队列的偏移量。CommitLog中保存了当前所有消息队列的当前待写入偏移量
             keyBuilder.setLength(0);
             keyBuilder.append(msgInner.getTopic());
             keyBuilder.append('-');
@@ -1235,7 +1270,7 @@ public class CommitLog {
                 msgInner.getPropertiesString() == null ? null : msgInner.getPropertiesString().getBytes(MessageDecoder.CHARSET_UTF8);
 
             final int propertiesLength = propertiesData == null ? 0 : propertiesData.length;
-
+            //属性长度超过最大值
             if (propertiesLength > Short.MAX_VALUE) {
                 log.warn("putMessage message properties length too long. length={}", propertiesData.length);
                 return new AppendMessageResult(AppendMessageStatus.PROPERTIES_SIZE_EXCEEDED);
@@ -1245,10 +1280,13 @@ public class CommitLog {
             final int topicLength = topicData.length;
 
             final int bodyLength = msgInner.getBody() == null ? 0 : msgInner.getBody().length;
-
+            //根据消息体长度，主题的长度，属性的长度结合消息存储格式计算消息的总长度
             final int msgLen = calMsgLength(bodyLength, topicLength, propertiesLength);
 
             // Exceeds the maximum message
+            /**
+             * 如果消息的长度 > 最大的消息长度，则抛出AppendMessageStatus.MESSAGE_SIZE_EXCEEDED 异常
+             */
             if (msgLen > this.maxMessageSize) {
                 CommitLog.log.warn("message size exceeded, msg total size: " + msgLen + ", msg body size: " + bodyLength
                     + ", maxMessageSize: " + this.maxMessageSize);
@@ -1256,6 +1294,11 @@ public class CommitLog {
             }
 
             // Determines whether there is sufficient free space
+            /**
+             * 如果消息长度 + END_FILE_MIN_BLANK_LENGTH 大于CommitLog文件的空闲空间，则返回AppendMessageStatus.END_OF_FILE
+             * Broker会重新创建一个新的CommitLog文件来存储该消息。从这里可以看出，每个CommitLog文件最少会空闲8个字节，高4字节存储当前
+             * 文件剩余空间，低4字节存储魔数：CommitLog.BLANK_MAGIC_COD
+             */
             if ((msgLen + END_FILE_MIN_BLANK_LENGTH) > maxBlank) {
                 this.resetByteBuffer(this.msgStoreItemMemory, maxBlank);
                 // 1 TOTALSIZE
@@ -1271,6 +1314,7 @@ public class CommitLog {
             }
 
             // Initialization of storage space
+            //初始化存储空间
             this.resetByteBuffer(msgStoreItemMemory, msgLen);
             // 1 TOTALSIZE
             this.msgStoreItemMemory.putInt(msgLen);
@@ -1314,14 +1358,20 @@ public class CommitLog {
             this.msgStoreItemMemory.putShort((short) propertiesLength);
             if (propertiesLength > 0)
                 this.msgStoreItemMemory.put(propertiesData);
-
+            /**
+             * 将消息内容存储到Byteuffer中B，然后创建AppendMessageResult。这里只是将消息存储在MappedFile对应的内存映射
+             * Buffer中，并没有刷写到磁盘。
+             */
             final long beginTimeMills = CommitLog.this.defaultMessageStore.now();
             // Write messages to the queue buffer
             byteBuffer.put(this.msgStoreItemMemory.array(), 0, msgLen);
 
             AppendMessageResult result = new AppendMessageResult(AppendMessageStatus.PUT_OK, wroteOffset, msgLen, msgId,
                 msgInner.getStoreTimestamp(), queueOffset, CommitLog.this.defaultMessageStore.now() - beginTimeMills);
-
+            /**
+             * 更新消息队列逻辑偏移量
+             * 处理完消息追加逻辑后将释放putMessageLock锁
+             */
             switch (tranType) {
                 case MessageSysFlag.TRANSACTION_PREPARED_TYPE:
                 case MessageSysFlag.TRANSACTION_ROLLBACK_TYPE:
