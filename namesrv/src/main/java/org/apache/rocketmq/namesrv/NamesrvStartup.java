@@ -54,6 +54,7 @@ public class NamesrvStartup {
     public static NamesrvController main0(String[] args) {
 
         try {
+            //创建控制器
             NamesrvController controller = createNamesrvController(args);
             start(controller);
             String tip = "The Name Server boot success. serializeType=" + RemotingCommand.getSerializeTypeConfigInThisServer();
@@ -78,10 +79,12 @@ public class NamesrvStartup {
             System.exit(-1);
             return null;
         }
-
+        //创建NameServer业务参数
         final NamesrvConfig namesrvConfig = new NamesrvConfig();
+        //创建NameServer网络参数
         final NettyServerConfig nettyServerConfig = new NettyServerConfig();
         nettyServerConfig.setListenPort(9876);
+        //-c configFile 通过-c命令指定配置文件的路径
         if (commandLine.hasOption('c')) {
             String file = commandLine.getOptionValue('c');
             if (file != null) {
@@ -97,7 +100,7 @@ public class NamesrvStartup {
                 in.close();
             }
         }
-
+        //使用属性 "--属性名 属性值"，例如 --listenPort 9876
         if (commandLine.hasOption('p')) {
             InternalLogger console = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_CONSOLE_NAME);
             MixAll.printObjectProperties(console, namesrvConfig);
