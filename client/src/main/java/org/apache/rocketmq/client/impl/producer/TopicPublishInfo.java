@@ -22,12 +22,17 @@ import org.apache.rocketmq.client.common.ThreadLocalIndex;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.protocol.route.QueueData;
 import org.apache.rocketmq.common.protocol.route.TopicRouteData;
-
+//主题路由信息
 public class TopicPublishInfo {
+    //是否是顺序消息
     private boolean orderTopic = false;
+    //
     private boolean haveTopicRouterInfo = false;
+    //该主题队列的消息队列
     private List<MessageQueue> messageQueueList = new ArrayList<MessageQueue>();
+    //每选择一次消息队列，该值会自增1，如果Integer.MAX_VALUE,则重置为0，用于选择消息队列
     private volatile ThreadLocalIndex sendWhichQueue = new ThreadLocalIndex();
+    //路由结果实体类
     private TopicRouteData topicRouteData;
 
     public boolean isOrderTopic() {
@@ -65,6 +70,7 @@ public class TopicPublishInfo {
     public void setHaveTopicRouterInfo(boolean haveTopicRouterInfo) {
         this.haveTopicRouterInfo = haveTopicRouterInfo;
     }
+
 
     public MessageQueue selectOneMessageQueue(final String lastBrokerName) {
         if (lastBrokerName == null) {

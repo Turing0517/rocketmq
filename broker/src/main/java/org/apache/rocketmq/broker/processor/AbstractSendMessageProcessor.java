@@ -162,6 +162,24 @@ public abstract class AbstractSendMessageProcessor implements NettyRequestProces
         return response;
     }
 
+    /**
+     * 检查消息发送是否合理，
+     * 第一步
+     *  1.检查该Broker是否写权限
+     *  2.检查该Topic是否可以进行消息发送。主要针对默认主题，默认主题不能发送消息，仅仅供路由查找
+     *  3.在NameServer端存储主题配置信息，默认路径：${ROCKET_HOME}/store/config/topic.json.
+     * 下面是主题存储信息。order：是否是顺序消息；perm:权限码；readQueueNums:读队列数量；writeQueueNums:写队列数量；
+     * topicName:主题名称；topicSysFlag:topic Flag,当前版本暂为保留；topicFilterType:主题过滤方式，当前版本仅支持SINGLE_TAG
+     *  4.检查队列，如果队列不存在，返回错误码
+     * 第二步
+     *  如果消息重试次数超过允许的最大重试次数，消息将进入到DLQ延迟队列。延迟队列主题：%DLQ% + 消费组名
+     * 第三步
+     *  调用DefaultMessageStore#putMessage进行消息存储
+     * @param ctx
+     * @param requestHeader
+     * @param response
+     * @return
+     */
     protected RemotingCommand msgCheck(final ChannelHandlerContext ctx,
         final SendMessageRequestHeader requestHeader, final RemotingCommand response) {
         if (!PermName.isWriteable(this.brokerController.getBrokerConfig().getBrokerPermission())

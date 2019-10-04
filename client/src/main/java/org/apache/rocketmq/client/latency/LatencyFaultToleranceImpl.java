@@ -29,6 +29,14 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
 
     private final ThreadLocalIndex whichItemWorst = new ThreadLocalIndex();
 
+    /**
+     * 根据broker名称从缓存表中获取FaultItem,如果找到更新FaultItem,否则创建FaultItem，这里有两个关键点
+     * 1.currentLatency,startTimeStamp被volatile修饰
+     * 2.startTimeStamp为当前系统时间加上需要规避的时长。startTimeStamp是判断broker当前是否可用的直接一句。
+     * @param name brokerName
+     * @param currentLatency 消息发送故障延迟时间
+     * @param notAvailableDuration 不可用持续时长，在这个时间内，Broker将被规避
+     */
     @Override
     public void updateFaultItem(final String name, final long currentLatency, final long notAvailableDuration) {
         FaultItem old = this.faultItemTable.get(name);
@@ -97,8 +105,11 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
     }
 
     class FaultItem implements Comparable<FaultItem> {
+        //brokerName
         private final String name;
+        //本次消息发送延迟
         private volatile long currentLatency;
+        //故障规避开始时间
         private volatile long startTimestamp;
 
         public FaultItem(final String name) {

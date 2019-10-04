@@ -59,6 +59,13 @@ public class ClientConfig {
 
     private LanguageCode language = LanguageCode.JAVA;
 
+    /**
+     * 创建clientInstanceId，IP@实例名称@模块名称
+     * IP@instance(@unitName可选）
+     * 为了避免同一台物理服务器部署两个应用程序出现clientId混乱，如果instance为默认值DEFAULT的话，RocketMQ会自动将instance设置为
+     * 进程ID，这样避免了不同进程的相互影响，但同一个JVM中的不同消费者和不同生产者在启动时获取到MQClientInstance实例都是同一个。
+     * @return
+     */
     public String buildMQClientId() {
         StringBuilder sb = new StringBuilder();
         sb.append(this.getClientIP());
