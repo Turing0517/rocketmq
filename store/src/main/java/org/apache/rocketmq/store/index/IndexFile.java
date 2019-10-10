@@ -305,7 +305,9 @@ public class IndexFile {
                         int prevIndexRead = this.mappedByteBuffer.getInt(absIndexPos + 4 + 8 + 4);
 
                         /**
-                         * 如果存储的时间差小于0，则直接结束
+                         * 如果存储的时间差小于0，则直接结束；如果HashCode匹配并且消息存储时间介于待查找时间start、end之间则将
+                         * 消息物理偏移量加入到phyOffsets，并验证条目的前一个Index索引，如果索引大于等于1并且小于index条目数，继续
+                         * 查找，否则结束整个查找
                          */
                         if (timeDiff < 0) {
                             break;

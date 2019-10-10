@@ -443,6 +443,15 @@ public class ConsumeQueue {
         this.defaultMessageStore.getRunningFlags().makeLogicsQueueError();
     }
 
+    /**
+     *
+     *
+     * @param offset
+     * @param size
+     * @param tagsCode
+     * @param cqOffset
+     * @return
+     */
     private boolean putMessagePositionInfo(final long offset, final int size, final long tagsCode,
         final long cqOffset) {
 
@@ -450,7 +459,10 @@ public class ConsumeQueue {
             log.warn("Maybe try to build consume queue repeatedly maxPhysicOffset={} phyOffset={}", maxPhysicOffset, offset);
             return true;
         }
-
+        /**
+         * 依次将消息偏移量、消息长度、tag hashCode 写入到ByteBuffer中，并根据ConsumeQueueOffset计算ConsumeQueue中物理位置地址，
+         * 将内容追加到ConsumeQueue的内容映射文件中（本操作只追加不刷盘），ConsumeQueue的刷盘方式固定为异步刷盘模式
+         */
         this.byteBufferIndex.flip();
         this.byteBufferIndex.limit(CQ_STORE_UNIT_SIZE);
         this.byteBufferIndex.putLong(offset);

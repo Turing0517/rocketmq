@@ -108,6 +108,13 @@ public class MappedFileQueue {
         return mfs;
     }
 
+    /**
+     * 删除offset之后的所有文件。遍历目录下的文件，如果文件的尾部偏移量小于offset则跳过该文件，如果尾部的偏移量大于offset，则进一步比较offset
+     * 与文件的开始偏移量，如果offset大于文件的起始偏移量，说明当前文件包含了有效偏移量，设置MappedFile的flushedPosition和commitedPosition
+     * 若干offset小于文件的起始偏移量，说明该文件的有效文件后面创建的。调用Mappedfile#destory释放MappedFile占用的内存资源（内存映射与内存
+     * 通道等）然后加入到待删除文件列表中，最终调用deleteExpiredFile将文件从物理磁盘删除。
+     * @param offset
+     */
     public void truncateDirtyFiles(long offset) {
         List<MappedFile> willRemoveFiles = new ArrayList<MappedFile>();
 
@@ -151,6 +158,10 @@ public class MappedFileQueue {
         }
     }
 
+    /**
+     * 加载文件
+     * @return
+     */
     public boolean load() {
         File dir = new File(this.storePath);
         File[] files = dir.listFiles();
@@ -352,6 +363,19 @@ public class MappedFileQueue {
         }
     }
 
+    /**
+     * 清除过期文件
+     执行文件销毁与删除。从倒数第二个文件开始遍历，计算文件的最大存活时间（ ＝文件
+     的最后一次更新时间＋文件存活时间（默认 72 小时）），如果当前时间大于文件的最大存活
+     时间或需要强制删除文件（当磁盘使用超过设定的阔值）时则执行 MappedFile#destory 方
+     法，清除 MappedFile 占有的相关资源，如果执行成功，将该文件加入到待删除文件列表
+     中，然后统一执行 File#delete 方法将文件从物理磁盘中删除 。
+     * @param expiredTime
+     * @param deleteFilesInterval
+     * @param intervalForcibly
+     * @param cleanImmediately
+     * @return
+     */
     public int deleteExpiredFileByTime(final long expiredTime,
         final int deleteFilesInterval,
         final long intervalForcibly,
