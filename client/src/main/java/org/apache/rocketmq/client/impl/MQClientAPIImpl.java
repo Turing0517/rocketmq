@@ -593,6 +593,17 @@ public class MQClientAPIImpl {
         return null;
     }
 
+    /**
+     * 消息拉取客户端处理消息
+     * @param addr
+     * @param request
+     * @param timeoutMillis
+     * @param pullCallback
+     * @throws RemotingException
+     * @throws InterruptedException
+     * NettyRemotingClient在收到服务端响应结构后会回调PullCallback的onSuccess或onException，PullCallBack对象在
+     * DefaultMQPushConsumerImpl#pullMessage中创建
+     */
     private void pullMessageAsync(
         final String addr,
         final RemotingCommand request,
@@ -605,6 +616,7 @@ public class MQClientAPIImpl {
                 RemotingCommand response = responseFuture.getResponseCommand();
                 if (response != null) {
                     try {
+                        //根据响应结果解码成PullResultExt对象
                         PullResult pullResult = MQClientAPIImpl.this.processPullResponse(response);
                         assert pullResult != null;
                         pullCallback.onSuccess(pullResult);
@@ -635,6 +647,13 @@ public class MQClientAPIImpl {
         return this.processPullResponse(response);
     }
 
+    /**
+     * 根据响应结果解码成PullResultExt对象，此时只是从网络中读物消息列表到byte[]messageBinary属性。
+     * @param response
+     * @return
+     * @throws MQBrokerException
+     * @throws RemotingCommandException
+     */
     private PullResult processPullResponse(
         final RemotingCommand response) throws MQBrokerException, RemotingCommandException {
         PullStatus pullStatus = PullStatus.NO_NEW_MSG;
@@ -951,6 +970,20 @@ public class MQClientAPIImpl {
         return response.getCode() == ResponseCode.SUCCESS;
     }
 
+    /**
+     * 如果消息监听返回的消费结果为RECONSUME_LATER,则需要将这些消息发送给Broker延迟消息。如果发送ACK消息失败，将延迟5s后提交线程池
+     * 进行消费。ACK消息发送的网络客户端入口：MQClientAPIImpl#consumerSendMessageBack，命令编码为
+     * RequestCode.CONSUMER_SEND_MSG_BACK
+     * @param addr
+     * @param msg
+     * @param consumerGroup
+     * @param delayLevel
+     * @param timeoutMillis
+     * @param maxConsumeRetryTimes
+     * @throws RemotingException
+     * @throws MQBrokerException
+     * @throws InterruptedException
+     */
     public void consumerSendMessageBack(
         final String addr,
         final MessageExt msg,

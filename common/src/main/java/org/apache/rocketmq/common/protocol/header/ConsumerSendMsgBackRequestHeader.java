@@ -22,17 +22,34 @@ import org.apache.rocketmq.remoting.annotation.CFNotNull;
 import org.apache.rocketmq.remoting.annotation.CFNullable;
 import org.apache.rocketmq.remoting.exception.RemotingCommandException;
 
+/**
+ * 消费发送消息请求头
+ */
 public class ConsumerSendMsgBackRequestHeader implements CommandCustomHeader {
+    //消息物理偏移量
     @CFNotNull
     private Long offset;
+    //消费组名
     @CFNotNull
     private String group;
+    /**
+     * 延迟级别，RocketMQ不支持精确的定时消息调度，而是提供几个延时级别，MessageStoreConfig中
+     */
     @CFNotNull
     private Integer delayLevel;
+    /**
+     * 消息ID
+     */
     private String originMsgId;
+    /**
+     * 消息主题
+     */
     private String originTopic;
     @CFNullable
     private boolean unitMode = false;
+    /**
+     * 最大重新消费次数，默认为16次
+     */
     private Integer maxReconsumeTimes;
 
     @Override

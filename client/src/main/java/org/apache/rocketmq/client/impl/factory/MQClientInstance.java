@@ -242,14 +242,19 @@ public class MQClientInstance {
                         this.mQClientAPIImpl.fetchNameServerAddr();
                     }
                     // Start request-response channel
+                    //开启请求回复通道
                     this.mQClientAPIImpl.start();
                     // Start various schedule tasks
+                    //开启定时任务
                     this.startScheduledTask();
                     // Start pull service
+                    //开启拉取服务
                     this.pullMessageService.start();
                     // Start rebalance service
+                    //开启负载服务
                     this.rebalanceService.start();
                     // Start push service
+                    //开启消息推送服务
                     this.defaultMQProducer.getDefaultMQProducerImpl().start(false);
                     log.info("the client factory [{}] start OK", this.clientId);
                     this.serviceState = ServiceState.RUNNING;
@@ -267,6 +272,7 @@ public class MQClientInstance {
     }
 
     private void startScheduledTask() {
+        //定时同步nameSrv
         if (null == this.clientConfig.getNamesrvAddr()) {
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
@@ -280,7 +286,7 @@ public class MQClientInstance {
                 }
             }, 1000 * 10, 1000 * 60 * 2, TimeUnit.MILLISECONDS);
         }
-
+        //定时更新NameServer
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -292,7 +298,7 @@ public class MQClientInstance {
                 }
             }
         }, 10, this.clientConfig.getPollNameServerInterval(), TimeUnit.MILLISECONDS);
-
+        //发送心跳给Broker，并清除下线Broker
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -305,7 +311,7 @@ public class MQClientInstance {
                 }
             }
         }, 1000, this.clientConfig.getHeartbeatBrokerInterval(), TimeUnit.MILLISECONDS);
-
+        //持久化消费偏移量
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -317,7 +323,7 @@ public class MQClientInstance {
                 }
             }
         }, 1000 * 10, this.clientConfig.getPersistConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
-
+        //定时调整线程池数量
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -1001,11 +1007,20 @@ public class MQClientInstance {
         this.rebalanceService.wakeup();
     }
 
+    /**
+     * MQClientInstance遍历已注册的消费者，对消费者执行doRebalance()方法。
+     */
     public void doRebalance() {
         for (Map.Entry<String, MQConsumerInner> entry : this.consumerTable.entrySet()) {
             MQConsumerInner impl = entry.getValue();
             if (impl != null) {
                 try {
+                    /**
+                     * 每个DefaultMQPushConsumerImplement都持有一个单独的RebalanceImpl对象，该方法主要是遍历订阅信息对每个主题
+                     * 的队列进行重新负载。RebalanceImpl的Map<String,SubscriptionData>subTable在调用消费者DefaultMQPushConsumerImpl
+                     * #subscribe方法时，填充。如果订阅信息发生变化，例如调用了unsubscribe方法，则需要将不关心的主题消费队列从processQueueTable
+                     * 中移除。
+                     */
                     impl.doRebalance();
                 } catch (Throwable e) {
                     log.error("doRebalance exception", e);

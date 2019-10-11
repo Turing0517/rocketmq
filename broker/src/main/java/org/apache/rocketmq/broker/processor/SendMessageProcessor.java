@@ -54,6 +54,10 @@ import org.apache.rocketmq.store.PutMessageResult;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * 处理客户端返回的消息
+ * 命令为CONSUMER_SEND_MSG_BACK
+ */
 public class SendMessageProcessor extends AbstractSendMessageProcessor implements NettyRequestProcessor {
 
     private List<ConsumeMessageHook> consumeMessageHookList;
@@ -96,6 +100,13 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
             this.brokerController.getMessageStore().isTransientStorePoolDeficient();
     }
 
+    /**
+     * 处理客户端返回的消息
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     private RemotingCommand consumerSendMsgBack(final ChannelHandlerContext ctx, final RemotingCommand request)
         throws RemotingCommandException {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
@@ -115,7 +126,10 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
 
             this.executeConsumeMessageHookAfter(context);
         }
-
+        /**
+         * 获取消费组的订阅配置信息，如果配置信息为空返回配置组信息不存在错误，如果重试队列数量小于1，则直接返回成功，说明该消费组不支持
+         * 重试。
+         */
         SubscriptionGroupConfig subscriptionGroupConfig =
             this.brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(requestHeader.getGroup());
         if (null == subscriptionGroupConfig) {
@@ -137,6 +151,9 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
             return response;
         }
 
+        /**
+         * 创建重试主题，重试主题名称：%RETRY% + 消费组名称，并从重试队列中随机选择一个队列，并构建TopicConfig主题配置信息。
+         */
         String newTopic = MixAll.getRetryTopic(requestHeader.getGroup());
         int queueIdInt = Math.abs(this.random.nextInt() % 99999999) % subscriptionGroupConfig.getRetryQueueNums();
 
@@ -160,7 +177,9 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
             response.setRemark(String.format("the topic[%s] sending message is forbidden", newTopic));
             return response;
         }
-
+        /**
+         * 根据消息物理偏移量从CommitLog文件中获取消息，同时将消息的主题存入属性中
+         */
         MessageExt msgExt = this.brokerController.getMessageStore().lookMessageByOffset(requestHeader.getOffset());
         if (null == msgExt) {
             response.setCode(ResponseCode.SYSTEM_ERROR);
@@ -175,7 +194,10 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         msgExt.setWaitStoreMsgOK(false);
 
         int delayLevel = requestHeader.getDelayLevel();
-
+        /**
+         * 设置消息重试次数，如果消息已重试次数超过maxReconsumeTimes,再次改变newTopic主题为DLQ（"%DLQ%"），该主题的权限为只写，说
+         * 明消息一旦进入到DLQ队列中，RocketMQ将不负责再次调度进行消费了，需要人工干预
+         */
         int maxReconsumeTimes = subscriptionGroupConfig.getRetryMaxTimes();
         if (request.getVersion() >= MQVersion.Version.V3_4_9.ordinal()) {
             maxReconsumeTimes = requestHeader.getMaxReconsumeTimes();
@@ -196,13 +218,19 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 return response;
             }
         } else {
+            /**
+             * 调整延迟级别
+             */
             if (0 == delayLevel) {
                 delayLevel = 3 + msgExt.getReconsumeTimes();
             }
 
             msgExt.setDelayTimeLevel(delayLevel);
         }
-
+        /**
+         * 根据原先的消息创建一个新的消息对象，重试消息会拥有自己的唯一消息ID（msgID）并存入到CommitLog文件中，并不会去更新原先消息，而是
+         * 会将原先的主题、消息ID存入消息的属性，主题名称为重试主题，其他属性与原先消息保存相同。
+         */
         MessageExtBrokerInner msgInner = new MessageExtBrokerInner();
         msgInner.setTopic(newTopic);
         msgInner.setBody(msgExt.getBody());
@@ -220,7 +248,9 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
 
         String originMsgId = MessageAccessor.getOriginMessageId(msgExt);
         MessageAccessor.setOriginMessageId(msgInner, UtilAll.isBlank(originMsgId) ? msgExt.getMsgId() : originMsgId);
-
+        /**
+         * 将消息存入到CommitLog文件中。消息重试机制依托于定时任务实现
+         */
         PutMessageResult putMessageResult = this.brokerController.getMessageStore().putMessage(msgInner);
         if (putMessageResult != null) {
             switch (putMessageResult.getPutMessageStatus()) {

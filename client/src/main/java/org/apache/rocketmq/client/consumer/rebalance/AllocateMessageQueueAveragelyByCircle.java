@@ -25,6 +25,12 @@ import org.apache.rocketmq.common.message.MessageQueue;
 
 /**
  * Cycle average Hashing queue algorithm
+ * 平局轮询分配
+ * 如果现在有8个消息队列q1,q2,q3,q4,q5,q6,q7,q8,有3个消费者：c1,c2,c3
+ * 分配为：
+ *  c1:q1,q4,17
+ *  c2:q2,q5,q8
+ *  c3:q3,q6
  */
 public class AllocateMessageQueueAveragelyByCircle implements AllocateMessageQueueStrategy {
     private final InternalLogger log = ClientLogger.getLog();

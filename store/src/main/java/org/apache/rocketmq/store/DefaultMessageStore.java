@@ -545,6 +545,16 @@ public class DefaultMessageStore implements MessageStore {
         return commitLog;
     }
 
+    /**
+     *
+     * @param group Consumer group that launches this query. 消费组名称
+     * @param topic Topic to query. 主题名称
+     * @param queueId Queue ID to query. 队列ID
+     * @param offset Logical offset to start from. 待拉取偏移量
+     * @param maxMsgNums Maximum count of messages to query. 最大拉取消息条数
+     * @param messageFilter Message filter used to screen desired messages. 消息过滤器
+     * @return
+     */
     public GetMessageResult getMessage(final String group, final String topic, final int queueId, final long offset,
         final int maxMsgNums,
         final MessageFilter messageFilter) {
@@ -559,7 +569,13 @@ public class DefaultMessageStore implements MessageStore {
         }
 
         long beginTime = this.getSystemClock().now();
-
+        /**
+         * 根据主题名称与队列编号获取消息消费队列
+         * nextBeginOffset : 待查找的队列偏移量
+         * minOffset：当前消息队列最小偏移量
+         * maxOffset:当前消息队列最大偏移量
+         * maxOffsetPy:当前commitLog文件最大偏移量
+         */
         GetMessageStatus status = GetMessageStatus.NO_MESSAGE_IN_QUEUE;
         long nextBeginOffset = offset;
         long minOffset = 0;
@@ -571,6 +587,24 @@ public class DefaultMessageStore implements MessageStore {
 
         ConsumeQueue consumeQueue = findConsumeQueue(topic, queueId);
         if (consumeQueue != null) {
+            /**
+             * 消息偏移量异常情况校对下一次拉取偏移量
+             * 1.maxOffset = 0，表示当前消费队列中没有消息，拉取结果：NO_MESSAGE_IN_QUEUE.
+             *      如果当前Broker为主节点或offsetCheckInSlave为false，下次拉取偏移量依然为offset。
+             *      如果当前Broker为从节点，offsetCheckInSlave为true，设置下次拉取偏移量为0
+             *  2.offset < minOffset ,表示待拉取消息偏移量小于队列的起始偏移量，拉取结果为：
+             *  OFFSET_TOO_SMALL.
+             *      如果当前Broker为主节点或offsetCheckInSlave为false，下次偏移量为offset
+             *      如果当前Broker为从节点，offsetCheckInSlave为true，设置下次拉取偏移量为 minOffset
+             *  3.offset == maxOffset，如果待拉取偏移量等于队列最大偏移量，拉取结果：
+             *  OFFSET_OVERFLOW_ONE。下次拉取偏移量依然为offset
+             *  4.Offset > maxOffset,表示偏移量越界，拉取结果：OFFSET_OVERFLOW_BADLY。
+             *  根据是否是主节点、从节点，同样校对下次拉取偏移量。
+             *
+             *  如果待拉取偏移量大于minOffset并且小于maxOffset，从当前offset处尝试拉取32条消息，根据消息队列偏移量（ConsumeQueue）
+             *  从CommitLog文件中查找消息。
+             *
+             */
             minOffset = consumeQueue.getMinOffsetInQueue();
             maxOffset = consumeQueue.getMaxOffsetInQueue();
 
@@ -704,7 +738,9 @@ public class DefaultMessageStore implements MessageStore {
         }
         long eclipseTime = this.getSystemClock().now() - beginTime;
         this.storeStatsService.setGetMessageEntireTimeMax(eclipseTime);
-
+        /**
+         * 根据PullRequest填充responseHeader的nextBeginOffset、minOffset、maxOffset。
+         */
         getResult.setStatus(status);
         getResult.setNextBeginOffset(nextBeginOffset);
         getResult.setMaxOffset(maxOffset);
@@ -1930,6 +1966,11 @@ public class DefaultMessageStore implements MessageStore {
         }
     }
 
+    /**
+     * 如果开启了长轮询机制，PullRequestHoldService线程会每隔5s被唤醒去尝试检测是否有限消息的到来，直到超时，如果被挂起，需要等待5s
+     * 消息拉取实时性比较差，为了避免这种情况，RocketMQ引入了另外一种机制：当消息到达时唤醒挂起线程，触发一次检查。
+     * 主要在ReputMessageService中实现唤醒
+     */
     class ReputMessageService extends ServiceThread {
 
         private volatile long reputFromOffset = 0;
@@ -2000,7 +2041,12 @@ public class DefaultMessageStore implements MessageStore {
                             if (dispatchRequest.isSuccess()) {
                                 if (size > 0) {
                                     DefaultMessageStore.this.doDispatch(dispatchRequest);
-
+                                    /**
+                                     * 当新消息达到CommitLog时，ReputMessageService线程负责将消息转发给ConsumeQueue、IndexFile
+                                     * 如果Broker端开启了长轮询模式并且角色为主节点，则最终将调用pullRequestHoldService线程的
+                                     * notifyMessageArriving方法唤醒挂起线程，判断当前消费队列最大偏移量是否大于待拉取偏移量，如果
+                                     * 大于则拉取消息。长轮询能实现准实时。
+                                     */
                                     if (BrokerRole.SLAVE != DefaultMessageStore.this.getMessageStoreConfig().getBrokerRole()
                                         && DefaultMessageStore.this.brokerConfig.isLongPollingEnable()) {
                                         DefaultMessageStore.this.messageArrivingListener.arriving(dispatchRequest.getTopic(),

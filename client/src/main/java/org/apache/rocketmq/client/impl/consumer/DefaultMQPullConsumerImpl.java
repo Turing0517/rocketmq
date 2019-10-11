@@ -505,9 +505,15 @@ public class DefaultMQPullConsumerImpl implements MQConsumerInner {
                 timeoutMillis,
                 CommunicationMode.ASYNC,
                 new PullCallback() {
-
+                    /**
+                     * 拉取到消息，处理逻辑
+                     * @param pullResult
+                     */
                     @Override
                     public void onSuccess(PullResult pullResult) {
+                        /**
+                         * 将消息字节数组解码成消息列表填充msgFoundList,并对消息进行消息过滤（TAG）模式。
+                         */
                         PullResult userPullResult = DefaultMQPullConsumerImpl.this.pullAPIWrapper.processPullResult(mq, pullResult, subscriptionData);
                         resetTopic(userPullResult.getMsgFoundList());
                         pullCallback.onSuccess(userPullResult);

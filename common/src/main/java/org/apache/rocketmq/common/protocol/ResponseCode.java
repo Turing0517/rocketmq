@@ -38,7 +38,7 @@ public class ResponseCode extends RemotingSysResponseCode {
     public static final int TOPIC_NOT_EXIST = 17;
     public static final int TOPIC_EXIST_ALREADY = 18;
     public static final int PULL_NOT_FOUND = 19;
-
+    //立即重试拉取
     public static final int PULL_RETRY_IMMEDIATELY = 20;
 
     public static final int PULL_OFFSET_MOVED = 21;
