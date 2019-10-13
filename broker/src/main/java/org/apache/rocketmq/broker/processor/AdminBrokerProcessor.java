@@ -178,6 +178,7 @@ public class AdminBrokerProcessor implements NettyRequestProcessor {
             case RequestCode.QUERY_TOPIC_CONSUME_BY_WHO:
                 return this.queryTopicConsumeByWho(ctx, request);
             case RequestCode.REGISTER_FILTER_SERVER:
+                //注册过滤器服务
                 return this.registerFilterServer(ctx, request);
             case RequestCode.QUERY_CONSUME_TIME_SPAN:
                 return this.queryConsumeTimeSpan(ctx, request);

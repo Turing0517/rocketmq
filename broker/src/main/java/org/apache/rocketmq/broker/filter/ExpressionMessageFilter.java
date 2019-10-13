@@ -31,6 +31,9 @@ import org.apache.rocketmq.store.MessageFilter;
 import java.nio.ByteBuffer;
 import java.util.Map;
 
+/**
+ * 表达式消息过滤器
+ */
 public class ExpressionMessageFilter implements MessageFilter {
 
     protected static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.FILTER_LOGGER_NAME);
@@ -57,19 +60,31 @@ public class ExpressionMessageFilter implements MessageFilter {
         }
     }
 
+    /**
+     * 根据ConsumeQueue进行消息过滤时，只对比tag的hashcode，所以基于TAG模式消息果粒橙，还需要在消费端对消息tag进行精确匹配
+     * @param tagsCode tagsCode 消息tag的hashCode
+     * @param cqExtUnit extend unit of consume queue ConsumeQueue条目扩展属性
+     * @return
+     */
     @Override
     public boolean isMatchedByConsumeQueue(Long tagsCode, ConsumeQueueExt.CqExtUnit cqExtUnit) {
+        /**
+         * 如果订阅消息未空，返回true，不过滤
+         */
         if (null == subscriptionData) {
             return true;
         }
-
+        //如果是类过滤模式，返回true
         if (subscriptionData.isClassFilterMode()) {
             return true;
         }
 
         // by tags code.
-        if (ExpressionType.isTagType(subscriptionData.getExpressionType())) {
 
+        if (ExpressionType.isTagType(subscriptionData.getExpressionType())) {
+            /**
+             * 如果是TAG过滤模式，并且消息的tagsCode为空或tagsCode小于0,返回true，说明消息在发送时没有设置tag。
+             */
             if (tagsCode == null) {
                 return true;
             }
@@ -77,7 +92,9 @@ public class ExpressionMessageFilter implements MessageFilter {
             if (subscriptionData.getSubString().equals(SubscriptionData.SUB_ALL)) {
                 return true;
             }
-
+            /**
+             * 如果订阅信息TAG的hashcode集合中包含消息的tagsCode，返回true
+             */
             return subscriptionData.getCodeSet().contains(tagsCode.intValue());
         } else {
             // no expression or no bloom
@@ -114,16 +131,30 @@ public class ExpressionMessageFilter implements MessageFilter {
         return true;
     }
 
+    /**
+     * 该方法主要是为表达式模式SQL92服务的，根据消息属性实现类似于数据库SQL Where条件过滤方式。
+     * @param msgBuffer message buffer in commit log, may be null if not invoked in store.
+     *                  消息内容，如果为空，该方法返回true
+     * @param properties message properties, should decode from buffer if null by yourself.
+     * @return
+     */
     @Override
     public boolean isMatchedByCommitLog(ByteBuffer msgBuffer, Map<String, String> properties) {
+        /**
+         * 如果订阅信息未空，返回true
+         */
         if (subscriptionData == null) {
             return true;
         }
-
+        /**
+         * 如果类过滤模式，返回true
+         */
         if (subscriptionData.isClassFilterMode()) {
             return true;
         }
-
+        /**
+         * 如果是TAG模式，返回true
+         */
         if (ExpressionType.isTagType(subscriptionData.getExpressionType())) {
             return true;
         }

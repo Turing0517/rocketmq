@@ -42,7 +42,8 @@ import org.apache.rocketmq.common.protocol.heartbeat.SubscriptionData;
 
 /**
  * Base class for rebalance algorithm
- *
+ * RocketMQ首先需要通过RebalanceService线程实现消息队列的负载，集群模式下同一个消费组内的消费者共同承担其订阅主题下消息队列的消费，
+ * 同一个消息消费队列在同一时刻只会被消费组内一个消费者消费，一个消费者同一时刻可以分配多个消费队列
  */
 public abstract class RebalanceImpl {
     protected static final InternalLogger log = ClientLogger.getLog();
@@ -119,6 +120,11 @@ public abstract class RebalanceImpl {
         }
     }
 
+    /**
+     * ConcurrentMap<MessageQueue,ProcessQueue> processQueueTable,将消息队列按照Broker组织成
+     * Map<String/brokerName /, Set<MessageQueue>>,方便下一步向Broker发送锁定消息队列请求。
+     * @return
+     */
     private HashMap<String/* brokerName */, Set<MessageQueue>> buildProcessQueueTableByBrokerName() {
         HashMap<String, Set<MessageQueue>> result = new HashMap<String, Set<MessageQueue>>();
         for (MessageQueue mq : this.processQueueTable.keySet()) {
@@ -181,6 +187,9 @@ public abstract class RebalanceImpl {
 
             FindBrokerResult findBrokerResult = this.mQClientFactory.findBrokerAddressInSubscribe(brokerName, MixAll.MASTER_ID, true);
             if (findBrokerResult != null) {
+                /**
+                 * 向Broker（Master主节点）发送锁定消息队列，该方法返回成功被当前消费者锁定的消息消费队列
+                 */
                 LockBatchRequestBody requestBody = new LockBatchRequestBody();
                 requestBody.setConsumerGroup(this.consumerGroup);
                 requestBody.setClientId(this.mQClientFactory.getClientId());
@@ -189,7 +198,9 @@ public abstract class RebalanceImpl {
                 try {
                     Set<MessageQueue> lockOKMQSet =
                         this.mQClientFactory.getMQClientAPIImpl().lockBatchMQ(findBrokerResult.getBrokerAddr(), requestBody, 1000);
-
+                    /**
+                     * 将成锁定的消息消费队列相对应的处理队列设置为锁定状态，同时更新加锁时间
+                     */
                     for (MessageQueue mq : lockOKMQSet) {
                         ProcessQueue processQueue = this.processQueueTable.get(mq);
                         if (processQueue != null) {
@@ -201,6 +212,10 @@ public abstract class RebalanceImpl {
                             processQueue.setLastLockTimestamp(System.currentTimeMillis());
                         }
                     }
+                    /**
+                     * 遍历当前处理队列中的消息消费队列，如果当前消费者不持有该消息队列的锁，将处理队列锁状态设置为false，暂停该消息消费队列的消息
+                     * 拉取与消息消费
+                     */
                     for (MessageQueue mq : mqs) {
                         if (!lockOKMQSet.contains(mq)) {
                             ProcessQueue processQueue = this.processQueueTable.get(mq);
@@ -415,6 +430,9 @@ public abstract class RebalanceImpl {
          * RocketMQ 提供 CONSUME_FROM_LAST_OFFSET 、 CONSUME_FROM_FIRST OFFSET 、 CONSUME_FROM_TIMESTAMP 方式，
          * 在创建消费者时可以通过调用 DefaultMQPushConsumer#setConsumeFromWhere 方法设置 。
          * PullRequest 的 nex tOffset 计算逻辑位于 ： RebalancePushlmpl#computePullFromWhere 。
+         * 如果经过消息队列重新负载（分配）后，分配到新的消息队列时，首先需要尝试向Broker发起锁定该消息队列的请求，如果返回加锁成功则创建该消息队列
+         * 的拉取任务，否则将跳过，等待其他消费者释放该消息队列的锁，然后在下一次队列重新负载时在尝试加锁。
+         * 顺序消息消费与并发消息消费的第一个关键区别：顺序消息在创建消息队列拉取任务时，需要在Broker服务器锁定该消息队列。
          */
         List<PullRequest> pullRequestList = new ArrayList<PullRequest>();
         //遍历已分配队列

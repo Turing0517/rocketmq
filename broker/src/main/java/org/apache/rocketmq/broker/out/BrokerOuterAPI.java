@@ -110,7 +110,25 @@ public class BrokerOuterAPI {
 
         this.remotingClient.updateNameServerAddressList(lst);
     }
-    //遍历NameServer列表，Broker消息服务器依次向NameServer发送心跳包
+
+    /**
+     * 遍历NameServer列表，Broker消息服务器依次向NameServer发送心跳包
+     * Broker每30s向所有NameServer发送心跳包，心跳包中包含了集群名称、Broker名称、Broker地址、BrokerId、haServer地址、topic配置
+     * 过滤服务器列表等
+     * 注：FilterServer在启动时向Broker注册自己，在Broker端维护该Broker的FilterServer信息，并定时监控FilterServer的状态，然后Broker
+     * 通过与所有NameServer的心跳包向NameServer注册Broker上存储的FilterServer列表，指引消息消费者正确从FilterServer上拉取消息。
+     * @param clusterName
+     * @param brokerAddr
+     * @param brokerName
+     * @param brokerId
+     * @param haServerAddr
+     * @param topicConfigWrapper
+     * @param filterServerList
+     * @param oneway
+     * @param timeoutMills
+     * @param compressed
+     * @return
+     */
     public List<RegisterBrokerResult> registerBrokerAll(
         final String clusterName,
         final String brokerAddr,

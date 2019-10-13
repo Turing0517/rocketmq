@@ -67,6 +67,15 @@ public class PullAPIWrapper {
         this.unitMode = unitMode;
     }
 
+    /**
+     * 从消息拉取流程知道，消息拉取线程PullMessageService默认会使用异步方式从服务器拉取消息，消息消费端会通过PullAPIWrapper从响应结果
+     * 解析出拉取到的消息。如果消息过滤模式为TAG模式，并且订阅TAG集合不为空，则对消息的tag进行判断，如果集合中包含消息的TAG则返回给消费者
+     * 消费，否则跳过。
+     * @param mq
+     * @param pullResult
+     * @param subscriptionData
+     * @return
+     */
     public PullResult processPullResult(final MessageQueue mq, final PullResult pullResult,
         final SubscriptionData subscriptionData) {
         PullResultExt pullResultExt = (PullResultExt) pullResult;
@@ -219,6 +228,9 @@ public class PullAPIWrapper {
              * 否则从Broker上拉取消息。
              */
             String brokerAddr = findBrokerResult.getBrokerAddr();
+            /**
+             * 在消息拉取时，如果发现消息过滤模式为classFilter，将拉取服务器地址由原来的Broker地址转换成Broker服务器对应的FilterServer
+             */
             if (PullSysFlag.hasClassFilterFlag(sysFlagInner)) {
                 brokerAddr = computPullFromWhichFilterServer(mq.getTopic(), brokerAddr);
             }
@@ -249,6 +261,15 @@ public class PullAPIWrapper {
         return MixAll.MASTER_ID;
     }
 
+    /**
+     * 获取该消息主题的路由信息，从路由信息中获取Broker对应的FilterServer列表，如果不为空则随机从FilterServer列表中选择一个FilterServer
+     * 发送拉取消息请求至相应的FilterServer上，由于FilterServer使用DefaultMQPullConsumer消费中根据消息消费者的拉取任务将拉取请求
+     * 转发给Broker，然后对返回的消息执行消息过滤逻辑，将匹配的消息返回给消费者。
+     * @param topic
+     * @param brokerAddr
+     * @return
+     * @throws MQClientException
+     */
     private String computPullFromWhichFilterServer(final String topic, final String brokerAddr)
         throws MQClientException {
         ConcurrentMap<String, TopicRouteData> topicRouteTable = this.mQClientFactory.getTopicRouteTable();

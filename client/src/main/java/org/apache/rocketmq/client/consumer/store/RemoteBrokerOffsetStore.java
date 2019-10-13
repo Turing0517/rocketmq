@@ -52,6 +52,17 @@ import org.apache.rocketmq.remoting.exception.RemotingException;
  *         "%RETRY%DataSyncConnsumeGroup@DataSyncConnsumeGroup":{0:0}
  *     }
  * }
+ *
+ * 1.消费者线程池每处理完一个消息消费任务（ConsumeRequest）时，会从ProcessQueue中移除本批消费的消息，并返回ProcessQueue中最小的偏移量
+ * 用该偏移量更新消息队列消费进度，也就是说更新消息消费进度与消费任务中的消息没什么关系。
+ * 例如现在两个消费任务task1（queueOffset分别为20，40），task2(50,70),并且ProcessQueue中当前包含最小消息偏移量为10的消息，则task2消费结束后
+ * 将使用10去更新消费进度，并不会是70.当task1消费结束后，还是以10去更新消费队列消息进度，消息消费进度的推进取决于ProcessQueue中偏移量最小
+ * 的消息消费速度。如果偏移量为10的消息消费成功后，假如ProcessQueue中包含消息偏移量为100的消息，则消息偏移量为10的消息消费成功后，
+ * 将直接用100更新消息消费进度。那如果在消费消息偏移量为10的消息时，发送了死锁导致一直无法被消费，那岂不是消息进度无法向前推进。
+ * 是的，为了避免这种情况，RocketMQ引入了一种消息拉取流控措施：DefaultMQPushConsumer#consumeConcurrentyMaxSpan = 2000,
+ * 消息处理队列ProcessQueue中最大偏移与最小偏移量不能超过这个值，如果超过，触发流控，将延迟该消息队列的消息拉取
+ * 2.触发消息消费进度更新的另外一个是在进行消息负载时，如果消息消费队列被分配给其他消费者时，此时会将该ProcessQueue状态设置为droppe的，
+ * 持久化该消息队列的消费进度，并从内存中移除
  */
 public class RemoteBrokerOffsetStore implements OffsetStore {
     private final static InternalLogger log = ClientLogger.getLog();

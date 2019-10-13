@@ -276,7 +276,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
             }
             return;
         }
-
+        //不是顺序消费
         if (!this.consumeOrderly) {
             if (processQueue.getMaxSpan() > this.defaultMQPushConsumer.getConsumeConcurrentlyMaxSpan()) {
                 this.executePullRequestLater(pullRequest, PULL_TIME_DELAY_MILLS_WHEN_FLOW_CONTROL);
@@ -289,7 +289,14 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                 return;
             }
         } else {
+            /** 顺序消费
+             *
+             */
             if (processQueue.isLocked()) {
+                /**
+                 * 如果消息处理队列已经被锁定
+                 * 如果该处理队列是第一次拉取任务，则首先计算拉取偏移量，然后向消息服务端拉取消息
+                 */
                 if (!pullRequest.isLockedFirst()) {
                     final long offset = this.rebalanceImpl.computePullFromWhere(pullRequest.getMessageQueue());
                     boolean brokerBusy = offset < pullRequest.getNextOffset();
@@ -304,6 +311,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                     pullRequest.setNextOffset(offset);
                 }
             } else {
+                //如果消息处理队列未被锁定，则延迟3s后再将PullRequest对象放入到拉取任务中
                 this.executePullRequestLater(pullRequest, PULL_TIME_DELAY_MILLS_WHEN_EXCEPTION);
                 log.info("pull message later because not locked in broker, {}", pullRequest);
                 return;
@@ -481,7 +489,9 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                 commitOffsetEnable = true;
             }
         }
-
+        /**
+         * 根据订阅消息构建消息拉取标记，设置subExpression、classFilter等于消息过滤相关
+         */
         String subExpression = null;
         boolean classFilter = false;
         SubscriptionData sd = this.rebalanceImpl.getSubscriptionInner().get(pullRequest.getMessageQueue().getTopic());
@@ -969,8 +979,15 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
         return this.rebalanceImpl.getSubscriptionInner();
     }
 
+    /**
+     * 消费者订阅消息主题与消息过滤表达式。
+     * @param topic
+     * @param subExpression
+     * @throws MQClientException
+     */
     public void subscribe(String topic, String subExpression) throws MQClientException {
         try {
+            //构建订阅信息并加入到RebalanceImpl中，以便RebalanceImpl进行消息队列负载
             SubscriptionData subscriptionData = FilterAPI.buildSubscriptionData(this.defaultMQPushConsumer.getConsumerGroup(),
                 topic, subExpression);
             this.rebalanceImpl.getSubscriptionInner().put(topic, subscriptionData);
@@ -982,8 +999,19 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
         }
     }
 
+    /**
+     * 类过滤模式订阅机制
+     * @param topic 消息主题
+     * @param fullClassName 类过滤全路径名
+     * @param filterClassSource 类过滤源代码字符串
+     * @throws MQClientException
+     */
     public void subscribe(String topic, String fullClassName, String filterClassSource) throws MQClientException {
         try {
+            /**
+             * 构建订阅信息，然后将该订阅信息添加到RebalanceImpl中，其主要目标是RebalanceImpl会对订阅信息表中的主题进行消息队列的负载
+             * 创建消息拉取任务，以便PullMessageService线程拉取消息。
+             */
             SubscriptionData subscriptionData = FilterAPI.buildSubscriptionData(this.defaultMQPushConsumer.getConsumerGroup(),
                 topic, "*");
             subscriptionData.setSubString(fullClassName);

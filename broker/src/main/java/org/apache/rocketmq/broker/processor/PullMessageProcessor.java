@@ -222,6 +222,7 @@ public class PullMessageProcessor implements NettyRequestProcessor {
                 response.setRemark("the consumer's subscription not latest");
                 return response;
             }
+            //根据主题、消息过滤表达式构建订阅消息实体.
             if (!ExpressionType.isTagType(subscriptionData.getExpressionType())) {
                 consumerFilterData = this.brokerController.getConsumerFilterManager().get(requestHeader.getTopic(),
                     requestHeader.getConsumerGroup());
@@ -246,7 +247,10 @@ public class PullMessageProcessor implements NettyRequestProcessor {
             response.setRemark("The broker does not support consumer to filter message by " + subscriptionData.getExpressionType());
             return response;
         }
-
+        /**
+         * 构建消息过滤对象，ExpressionForretryMessageFilter，支持对重试主题的过滤，ExpressionMessageFilter，不支持对重试主题的
+         * 属性过滤，也就是如果是tag模式，执行isMatchByCommitLog,方法直接返回true；
+         */
         MessageFilter messageFilter;
         if (this.brokerController.getBrokerConfig().isFilterSupportRetry()) {
             messageFilter = new ExpressionForRetryMessageFilter(subscriptionData, consumerFilterData,

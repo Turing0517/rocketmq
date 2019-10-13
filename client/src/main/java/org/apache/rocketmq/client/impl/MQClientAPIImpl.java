@@ -1617,6 +1617,21 @@ public class MQClientAPIImpl {
         throw new MQClientException(response.getCode(), response.getRemark());
     }
 
+    /**
+     * 注册消息过滤器类
+     * @param addr 地址
+     * @param consumerGroup 消费组名
+     * @param topic 消息主题
+     * @param className 消息过滤类全路径
+     * @param classCRC 源码的CRC验证码
+     * @param classBody  过滤类源码
+     * @param timeoutMillis
+     * @throws RemotingConnectException
+     * @throws RemotingSendRequestException
+     * @throws RemotingTimeoutException
+     * @throws InterruptedException
+     * @throws MQBrokerException
+     */
     public void registerMessageFilterClass(final String addr,
         final String consumerGroup,
         final String topic,

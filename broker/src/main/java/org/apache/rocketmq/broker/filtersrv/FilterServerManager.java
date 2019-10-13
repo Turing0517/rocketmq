@@ -35,6 +35,9 @@ import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.remoting.common.RemotingUtil;
 
+/**
+ * 注册服务管理类
+ */
 public class FilterServerManager {
 
     public static final long FILTER_SERVER_MAX_IDLE_TIME_MILLS = 30000;
@@ -64,7 +67,16 @@ public class FilterServerManager {
         }, 1000 * 5, 1000 * 30, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * Filterserver与Broker通过心跳维持FilterServer在Broker端的注册，同样在Broker每隔10s扫描一下该注册表，如果30s内未收到FilterServer
+     * 的注册信息，将关闭Broker与FilterServer的连接。Broker为了避免Broker端FilterServer异常的退出导致FilterServer进程数越来越少，同样
+     * 提供一个定时任务每30s检测一下当前存活的FilterServer进程的个数，如果当前存活的FilterServer进程个数小于配置的数量，则自动创建一个FilterServer
+     * 进程。
+     */
     public void createFilterServer() {
+        /**
+         * 读取配置文件中的属性FilterServerNums，如果当前运行的FilterServer进程数量小于FilterServerNums，则构建shell命令并调用
+         */
         int more =
             this.brokerController.getBrokerConfig().getFilterServerNums() - this.filterServerTable.size();
         String cmd = this.buildStartCommand();
@@ -73,6 +85,10 @@ public class FilterServerManager {
         }
     }
 
+    /**
+     * 构建启动命令
+     * @return
+     */
     private String buildStartCommand() {
         String config = "";
         if (BrokerStartup.configFile != null) {
@@ -98,6 +114,13 @@ public class FilterServerManager {
         this.scheduledExecutorService.shutdown();
     }
 
+    /**
+     * 注册消息过滤服务
+     * 先从filterServerTable中以网络通道为key获取FilterServerInfo，如果不等于空，则更新一下上次更新时间为当前时间，否则创建一个新的
+     * FilterServernfo对象，并加入到filterServerTable路由表中
+     * @param channel
+     * @param filterServerAddr
+     */
     public void registerFilterServer(final Channel channel, final String filterServerAddr) {
         FilterServerInfo filterServerInfo = this.filterServerTable.get(channel);
         if (filterServerInfo != null) {
@@ -144,8 +167,13 @@ public class FilterServerManager {
         return addr;
     }
 
+    /**
+     * 消息过滤服务信息类
+     */
     static class FilterServerInfo {
+        //filterServer服务器地址
         private String filterServerAddr;
+        //FilterServer上次发送心跳包时间
         private long lastUpdateTimestamp;
 
         public String getFilterServerAddr() {

@@ -21,10 +21,14 @@ package org.apache.rocketmq.broker.filtersrv;
 import org.apache.rocketmq.logging.InternalLogger;
 
 public class FilterServerUtil {
+    //构建shell命令
     public static void callShell(final String shellString, final InternalLogger log) {
         Process process = null;
         try {
             String[] cmdArray = splitShellString(shellString);
+            /**
+             * 利用Runtime.getRuntime()直接指向shell脚本，是java调用shell脚本的一种实现方式。
+             */
             process = Runtime.getRuntime().exec(cmdArray);
             process.waitFor();
             log.info("CallShell: <{}> OK", shellString);
