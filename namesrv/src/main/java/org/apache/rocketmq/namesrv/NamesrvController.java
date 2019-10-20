@@ -57,7 +57,7 @@ public class NamesrvController {
     private final RouteInfoManager routeInfoManager;
 
     private RemotingServer remotingServer;
-
+    //远程渠道事件，监听处理器
     private BrokerHousekeepingService brokerHousekeepingService;
 
     private ExecutorService remotingExecutor;
@@ -66,10 +66,15 @@ public class NamesrvController {
     private FileWatchService fileWatchService;
 
     public NamesrvController(NamesrvConfig namesrvConfig, NettyServerConfig nettyServerConfig) {
+        //namesrv的配置
         this.namesrvConfig = namesrvConfig;
+        //远程连接netty参数配置
         this.nettyServerConfig = nettyServerConfig;
+        //kv配置
         this.kvConfigManager = new KVConfigManager(this);
+        //路由信息管理配置
         this.routeInfoManager = new RouteInfoManager();
+        //渠道状态监控
         this.brokerHousekeepingService = new BrokerHousekeepingService(this);
         this.configuration = new Configuration(
             log,
@@ -85,12 +90,12 @@ public class NamesrvController {
     public boolean initialize() {
         //加载KV配置
         this.kvConfigManager.load();
-
+        //创建NettyServer网路处理对象，
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
-
+        //创建线程池
         this.remotingExecutor =
             Executors.newFixedThreadPool(nettyServerConfig.getServerWorkerThreads(), new ThreadFactoryImpl("RemotingExecutorThread_"));
-
+        //注册处理类
         this.registerProcessor();
         //NameServer每隔10s扫描一次Broker,移除处于不激活状态的Broker
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
@@ -162,6 +167,7 @@ public class NamesrvController {
     }
 
     public void start() throws Exception {
+        //启动远程服务
         this.remotingServer.start();
 
         if (this.fileWatchService != null) {
@@ -170,10 +176,13 @@ public class NamesrvController {
     }
 
     public void shutdown() {
+        //关闭远程服务
         this.remotingServer.shutdown();
+        //关闭线程池
         this.remotingExecutor.shutdown();
+        //关闭定时任务
         this.scheduledExecutorService.shutdown();
-
+        //如果开始了文件监控，则关闭
         if (this.fileWatchService != null) {
             this.fileWatchService.shutdown();
         }

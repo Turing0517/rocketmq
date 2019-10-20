@@ -32,8 +32,9 @@ public class KVConfigManager {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
 
     private final NamesrvController namesrvController;
-
+    //读写锁
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    //hashMap ,key 命名空间 value：HashMap key ,value
     private final HashMap<String/* Namespace */, HashMap<String/* Key */, String/* Value */>> configTable =
         new HashMap<String, HashMap<String, String>>();
 
@@ -44,10 +45,12 @@ public class KVConfigManager {
     public void load() {
         String content = null;
         try {
+            //获取kv配置指定的路径文件内容，转换成字符串
             content = MixAll.file2String(this.namesrvController.getNamesrvConfig().getKvConfigPath());
         } catch (IOException e) {
             log.warn("Load KV config table exception", e);
         }
+        //如果不等于空，解析成相应的格式
         if (content != null) {
             KVConfigSerializeWrapper kvConfigSerializeWrapper =
                 KVConfigSerializeWrapper.fromJson(content, KVConfigSerializeWrapper.class);
