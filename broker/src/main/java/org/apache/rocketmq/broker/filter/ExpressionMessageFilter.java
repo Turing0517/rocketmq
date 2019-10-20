@@ -37,10 +37,13 @@ import java.util.Map;
 public class ExpressionMessageFilter implements MessageFilter {
 
     protected static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.FILTER_LOGGER_NAME);
-
+    //订阅信息数据
     protected final SubscriptionData subscriptionData;
+    //消费过滤数据
     protected final ConsumerFilterData consumerFilterData;
+    //消费过滤管理
     protected final ConsumerFilterManager consumerFilterManager;
+    //布隆数据验证
     protected final boolean bloomDataValid;
 
     public ExpressionMessageFilter(SubscriptionData subscriptionData, ConsumerFilterData consumerFilterData,
@@ -52,7 +55,9 @@ public class ExpressionMessageFilter implements MessageFilter {
             bloomDataValid = false;
             return;
         }
+        //获取布隆过滤器
         BloomFilter bloomFilter = this.consumerFilterManager.getBloomFilter();
+        //验证消费过滤器数据里的布隆数据是否有效
         if (bloomFilter != null && bloomFilter.isValid(consumerFilterData.getBloomFilterData())) {
             bloomDataValid = true;
         } else {
@@ -97,7 +102,8 @@ public class ExpressionMessageFilter implements MessageFilter {
              */
             return subscriptionData.getCodeSet().contains(tagsCode.intValue());
         } else {
-            // no expression or no bloom
+            //不是tag过滤
+            // no expression or no bloom 没有表达式，或没有布隆
             if (consumerFilterData == null || consumerFilterData.getExpression() == null
                 || consumerFilterData.getCompiledExpression() == null || consumerFilterData.getBloomFilterData() == null) {
                 return true;
@@ -108,9 +114,11 @@ public class ExpressionMessageFilter implements MessageFilter {
                 log.debug("Pull matched because not in live: {}, {}", consumerFilterData, cqExtUnit);
                 return true;
             }
-
+            //获取位图
             byte[] filterBitMap = cqExtUnit.getFilterBitMap();
+            //获取布隆过滤器
             BloomFilter bloomFilter = this.consumerFilterManager.getBloomFilter();
+            //位图为空，或布隆过滤器无效，或位图长度*8和布隆过滤器的位数相同，直接返回true
             if (filterBitMap == null || !this.bloomDataValid
                 || filterBitMap.length * Byte.SIZE != consumerFilterData.getBloomFilterData().getBitNum()) {
                 return true;
@@ -119,6 +127,7 @@ public class ExpressionMessageFilter implements MessageFilter {
             BitsArray bitsArray = null;
             try {
                 bitsArray = BitsArray.create(filterBitMap);
+                //进行布隆过滤器校验
                 boolean ret = bloomFilter.isHit(consumerFilterData.getBloomFilterData(), bitsArray);
                 log.debug("Pull {} by bit map:{}, {}, {}", ret, consumerFilterData, bitsArray, cqExtUnit);
                 return ret;

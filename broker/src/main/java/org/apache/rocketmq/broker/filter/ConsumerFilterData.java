@@ -28,16 +28,22 @@ import java.util.Collections;
 
 /**
  * Filter data of consumer.
+ * 消费过滤器数据类
  */
 public class ConsumerFilterData {
-
+    //消费组
     private String consumerGroup;
+    //主题
     private String topic;
+    //表达式
     private String expression;
+    //表达式类型
     private String expressionType;
+    //解析表达式
     private transient Expression compiledExpression;
     private long bornTime;
     private long deadTime = 0;
+    //布隆过滤器
     private BloomFilterData bloomFilterData;
     private long clientVersion;
 

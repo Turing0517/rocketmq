@@ -168,6 +168,7 @@ public class BloomFilter {
     public boolean isHit(int[] bitPositions, BitsArray bits) {
         check(bits);
         boolean ret = bits.getBit(bitPositions[0]);
+        //每一位进行与操作
         for (int i = 1; i < bitPositions.length; i++) {
             ret &= bits.getBit(bitPositions[i]);
         }

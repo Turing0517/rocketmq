@@ -21,20 +21,26 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * 获取消息结果类
+ */
 public class GetMessageResult {
-
+    //
     private final List<SelectMappedBufferResult> messageMapedList =
         new ArrayList<SelectMappedBufferResult>(100);
-
+    //消息列表
     private final List<ByteBuffer> messageBufferList = new ArrayList<ByteBuffer>(100);
-
+    //获取消息的状态
     private GetMessageStatus status;
+    //下一个开始偏移量
     private long nextBeginOffset;
+    //最小偏移量
     private long minOffset;
+    //最大偏移量
     private long maxOffset;
-
+    //总的数据量
     private int bufferTotalSize = 0;
-
+    //建议从从节点拉取
     private boolean suggestPullingFromSlave = false;
 
     private int msgCount4Commercial = 0;

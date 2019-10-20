@@ -29,6 +29,7 @@ import java.util.Map;
 /**
  * Support filter to retry topic.
  * <br>It will decode properties first in order to get real topic.
+ * 将会首先解码属性为了获取真实的主题
  */
 public class ExpressionForRetryMessageFilter extends ExpressionMessageFilter {
     public ExpressionForRetryMessageFilter(SubscriptionData subscriptionData, ConsumerFilterData consumerFilterData,
@@ -55,6 +56,7 @@ public class ExpressionForRetryMessageFilter extends ExpressionMessageFilter {
         ConsumerFilterData realFilterData = this.consumerFilterData;
         Map<String, String> tempProperties = properties;
         boolean decoded = false;
+        //是否是重试topic
         if (isRetryTopic) {
             // retry topic, use original filter data.
             // poor performance to support retry filter.
@@ -62,12 +64,14 @@ public class ExpressionForRetryMessageFilter extends ExpressionMessageFilter {
                 decoded = true;
                 tempProperties = MessageDecoder.decodeProperties(msgBuffer);
             }
+            //获取真实topic
             String realTopic = tempProperties.get(MessageConst.PROPERTY_RETRY_TOPIC);
             String group = subscriptionData.getTopic().substring(MixAll.RETRY_GROUP_TOPIC_PREFIX.length());
+            //根据真实topic和组信息，获取真实过滤信息
             realFilterData = this.consumerFilterManager.get(realTopic, group);
         }
 
-        // no expression
+        // no expression 如果没有表达式
         if (realFilterData == null || realFilterData.getExpression() == null
             || realFilterData.getCompiledExpression() == null) {
             return true;
@@ -80,7 +84,7 @@ public class ExpressionForRetryMessageFilter extends ExpressionMessageFilter {
         Object ret = null;
         try {
             MessageEvaluationContext context = new MessageEvaluationContext(tempProperties);
-
+            //解析表达式，并计算过滤结果
             ret = realFilterData.getCompiledExpression().evaluate(context);
         } catch (Throwable e) {
             log.error("Message Filter error, " + realFilterData + ", " + tempProperties, e);

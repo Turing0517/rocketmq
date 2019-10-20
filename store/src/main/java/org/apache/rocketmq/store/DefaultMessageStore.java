@@ -546,7 +546,7 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     /**
-     *
+     *  获取消息
      * @param group Consumer group that launches this query. 消费组名称
      * @param topic Topic to query. 主题名称
      * @param queueId Queue ID to query. 队列ID
@@ -558,16 +558,17 @@ public class DefaultMessageStore implements MessageStore {
     public GetMessageResult getMessage(final String group, final String topic, final int queueId, final long offset,
         final int maxMsgNums,
         final MessageFilter messageFilter) {
+        //判断当前store是否可用
         if (this.shutdown) {
             log.warn("message store has shutdown, so getMessage is forbidden");
             return null;
         }
-
+        //判断是否可读
         if (!this.runningFlags.isReadable()) {
             log.warn("message store is not readable, so getMessage is forbidden " + this.runningFlags.getFlagBits());
             return null;
         }
-
+        //获取开始时间
         long beginTime = this.getSystemClock().now();
         /**
          * 根据主题名称与队列编号获取消息消费队列
@@ -580,44 +581,50 @@ public class DefaultMessageStore implements MessageStore {
         long nextBeginOffset = offset;
         long minOffset = 0;
         long maxOffset = 0;
-
+        //创建消息结果
         GetMessageResult getResult = new GetMessageResult();
-
+        //获取CommitLog的最大偏移量
         final long maxOffsetPy = this.commitLog.getMaxOffset();
-
+        //根据主题和队列id获取消费队列信息
         ConsumeQueue consumeQueue = findConsumeQueue(topic, queueId);
         if (consumeQueue != null) {
             /**
              * 消息偏移量异常情况校对下一次拉取偏移量
-             * 1.maxOffset = 0，表示当前消费队列中没有消息，拉取结果：NO_MESSAGE_IN_QUEUE.
-             *      如果当前Broker为主节点或offsetCheckInSlave为false，下次拉取偏移量依然为offset。
-             *      如果当前Broker为从节点，offsetCheckInSlave为true，设置下次拉取偏移量为0
-             *  2.offset < minOffset ,表示待拉取消息偏移量小于队列的起始偏移量，拉取结果为：
-             *  OFFSET_TOO_SMALL.
-             *      如果当前Broker为主节点或offsetCheckInSlave为false，下次偏移量为offset
-             *      如果当前Broker为从节点，offsetCheckInSlave为true，设置下次拉取偏移量为 minOffset
-             *  3.offset == maxOffset，如果待拉取偏移量等于队列最大偏移量，拉取结果：
-             *  OFFSET_OVERFLOW_ONE。下次拉取偏移量依然为offset
-             *  4.Offset > maxOffset,表示偏移量越界，拉取结果：OFFSET_OVERFLOW_BADLY。
-             *  根据是否是主节点、从节点，同样校对下次拉取偏移量。
-             *
              *  如果待拉取偏移量大于minOffset并且小于maxOffset，从当前offset处尝试拉取32条消息，根据消息队列偏移量（ConsumeQueue）
              *  从CommitLog文件中查找消息。
              *
              */
-            minOffset = consumeQueue.getMinOffsetInQueue();
-            maxOffset = consumeQueue.getMaxOffsetInQueue();
-
+            minOffset = consumeQueue.getMinOffsetInQueue();//最小偏移量
+            maxOffset = consumeQueue.getMaxOffsetInQueue();//最大偏移量
+            /**
+             * 1.maxOffset = 0，表示当前消费队列中没有消息，拉取结果：NO_MESSAGE_IN_QUEUE.
+             *      如果当前Broker为主节点或offsetCheckInSlave为false，下次拉取偏移量依然为offset。
+             *      如果当前Broker为从节点，offsetCheckInSlave为true，设置下次拉取偏移量为0
+             */
             if (maxOffset == 0) {
                 status = GetMessageStatus.NO_MESSAGE_IN_QUEUE;
                 nextBeginOffset = nextOffsetCorrection(offset, 0);
             } else if (offset < minOffset) {
+                /**
+                 *  2.offset < minOffset ,表示待拉取消息偏移量小于队列的起始偏移量，拉取结果为：
+                 *  OFFSET_TOO_SMALL.
+                 *      如果当前Broker为主节点或offsetCheckInSlave为false，下次偏移量为offset
+                 *      如果当前Broker为从节点，offsetCheckInSlave为true，设置下次拉取偏移量为 minOffset
+                 */
                 status = GetMessageStatus.OFFSET_TOO_SMALL;
                 nextBeginOffset = nextOffsetCorrection(offset, minOffset);
             } else if (offset == maxOffset) {
+                /**
+                 *  3.offset == maxOffset，如果待拉取偏移量等于队列最大偏移量，拉取结果：
+                 *  OFFSET_OVERFLOW_ONE。下次拉取偏移量依然为offset
+                 */
                 status = GetMessageStatus.OFFSET_OVERFLOW_ONE;
                 nextBeginOffset = nextOffsetCorrection(offset, offset);
             } else if (offset > maxOffset) {
+                /**
+                 *  4.Offset > maxOffset,表示偏移量越界，拉取结果：OFFSET_OVERFLOW_BADLY。
+                 *  根据是否是主节点、从节点，同样校对下次拉取偏移量。
+                 */
                 status = GetMessageStatus.OFFSET_OVERFLOW_BADLY;
                 if (0 == minOffset) {
                     nextBeginOffset = nextOffsetCorrection(offset, minOffset);
@@ -625,6 +632,7 @@ public class DefaultMessageStore implements MessageStore {
                     nextBeginOffset = nextOffsetCorrection(offset, maxOffset);
                 }
             } else {
+                //获取映射文件信息
                 SelectMappedBufferResult bufferConsumeQueue = consumeQueue.getIndexBuffer(offset);
                 if (bufferConsumeQueue != null) {
                     try {
@@ -634,23 +642,27 @@ public class DefaultMessageStore implements MessageStore {
                         long maxPhyOffsetPulling = 0;
 
                         int i = 0;
+                        //获取最大消息数
                         final int maxFilterMessageCount = Math.max(16000, maxMsgNums * ConsumeQueue.CQ_STORE_UNIT_SIZE);
                         final boolean diskFallRecorded = this.messageStoreConfig.isDiskFallRecorded();
                         ConsumeQueueExt.CqExtUnit cqExtUnit = new ConsumeQueueExt.CqExtUnit();
                         for (; i < bufferConsumeQueue.getSize() && i < maxFilterMessageCount; i += ConsumeQueue.CQ_STORE_UNIT_SIZE) {
+                            //获取偏移量
                             long offsetPy = bufferConsumeQueue.getByteBuffer().getLong();
+                            //获取长度
                             int sizePy = bufferConsumeQueue.getByteBuffer().getInt();
+                            //获取tag
                             long tagsCode = bufferConsumeQueue.getByteBuffer().getLong();
-
+                            //最大拉取偏移量设置为offsetPy
                             maxPhyOffsetPulling = offsetPy;
 
                             if (nextPhyFileStartOffset != Long.MIN_VALUE) {
                                 if (offsetPy < nextPhyFileStartOffset)
                                     continue;
                             }
-
+                            //判断是否拉取的数据在硬盘上
                             boolean isInDisk = checkInDiskByCommitOffset(offsetPy, maxOffsetPy);
-
+                            //判断该批消息拉取是否已满
                             if (this.isTheBatchFull(sizePy, maxMsgNums, getResult.getBufferTotalSize(), getResult.getMessageCount(),
                                 isInDisk)) {
                                 break;
@@ -680,7 +692,7 @@ public class DefaultMessageStore implements MessageStore {
 
                                 continue;
                             }
-
+                            //获取消息
                             SelectMappedBufferResult selectResult = this.commitLog.getMessage(offsetPy, sizePy);
                             if (null == selectResult) {
                                 if (getResult.getBufferTotalSize() == 0) {
@@ -736,7 +748,7 @@ public class DefaultMessageStore implements MessageStore {
             status = GetMessageStatus.NO_MATCHED_LOGIC_QUEUE;
             nextBeginOffset = nextOffsetCorrection(offset, 0);
         }
-
+        //统计消息拉取
         if (GetMessageStatus.FOUND == status) {
             this.storeStatsService.getGetMessageTimesTotalFound().incrementAndGet();
         } else {
@@ -1268,21 +1280,23 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     private boolean checkInDiskByCommitOffset(long offsetPy, long maxOffsetPy) {
+        //在内存中偏移量，物理内存大小 * 存储配置中在内存的比例
         long memory = (long) (StoreUtil.TOTAL_PHYSICAL_MEMORY_SIZE * (this.messageStoreConfig.getAccessMessageInMemoryMaxRatio() / 100.0));
         return (maxOffsetPy - offsetPy) > memory;
     }
-
+    //批次是否已满
     private boolean isTheBatchFull(int sizePy, int maxMsgNums, int bufferTotal, int messageTotal, boolean isInDisk) {
-
+        //消息为空，则表示还没有数据，返回false
         if (0 == bufferTotal || 0 == messageTotal) {
             return false;
         }
-
+        //最大消息数小于等于消息总数
         if (maxMsgNums <= messageTotal) {
             return true;
         }
-
+        //如果消息在硬盘上
         if (isInDisk) {
+            //和硬盘上最大位移进行比较
             if ((bufferTotal + sizePy) > this.messageStoreConfig.getMaxTransferBytesOnMessageInDisk()) {
                 return true;
             }
@@ -1291,6 +1305,7 @@ public class DefaultMessageStore implements MessageStore {
                 return true;
             }
         } else {
+            //和内存中最大位移进行比较
             if ((bufferTotal + sizePy) > this.messageStoreConfig.getMaxTransferBytesOnMessageInMemory()) {
                 return true;
             }

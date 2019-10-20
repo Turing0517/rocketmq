@@ -63,7 +63,7 @@ public class PullRequestHoldService extends ServiceThread {
                 mpr = prev;
             }
         }
-
+        //添加拉取请求
         mpr.addPullRequest(pullRequest);
     }
 
@@ -84,9 +84,12 @@ public class PullRequestHoldService extends ServiceThread {
         log.info("{} service started", this.getServiceName());
         while (!this.isStopped()) {
             try {
+                //是否开启长轮询
                 if (this.brokerController.getBrokerConfig().isLongPollingEnable()) {
+                    //挂起5秒
                     this.waitForRunning(5 * 1000);
                 } else {
+                    //挂起短轮询时间
                     this.waitForRunning(this.brokerController.getBrokerConfig().getShortPollingTimeMills());
                 }
 
@@ -115,6 +118,7 @@ public class PullRequestHoldService extends ServiceThread {
      * notifyMessageArriving触发消息拉取
      */
     private void checkHoldRequest() {
+        //遍历任务列表
         for (String key : this.pullRequestTable.keySet()) {
             String[] kArray = key.split(TOPIC_QUEUEID_SEPARATOR);
             if (2 == kArray.length) {
@@ -122,6 +126,7 @@ public class PullRequestHoldService extends ServiceThread {
                 int queueId = Integer.parseInt(kArray[1]);
                 final long offset = this.brokerController.getMessageStore().getMaxOffsetInQueue(topic, queueId);
                 try {
+                    //通知消息到达
                     this.notifyMessageArriving(topic, queueId, offset);
                 } catch (Throwable e) {
                     log.error("check hold request failed. topic={}, queueId={}", topic, queueId, e);
@@ -152,7 +157,9 @@ public class PullRequestHoldService extends ServiceThread {
      */
     public void notifyMessageArriving(final String topic, final int queueId, final long maxOffset, final Long tagsCode,
         long msgStoreTime, byte[] filterBitMap, Map<String, String> properties) {
+        //根据主题和队列id构建key，为topic@queueId
         String key = this.buildKey(topic, queueId);
+        //从任务表中获取拉取消息的请求
         ManyPullRequest mpr = this.pullRequestTable.get(key);
         if (mpr != null) {
             /**
@@ -163,9 +170,13 @@ public class PullRequestHoldService extends ServiceThread {
             List<PullRequest> requestList = mpr.cloneListAndClear();
             if (requestList != null) {
                 List<PullRequest> replayList = new ArrayList<PullRequest>();
-
+                /**
+                 * 遍历该主题队列下的拉取消息
+                 */
                 for (PullRequest request : requestList) {
+                    //获取最大偏移量，赋值给最新偏移量
                     long newestOffset = maxOffset;
+                    //如果最新偏移量小于等于本次请求的待拉取偏移量，则将最新偏移量更新成队列最大偏移量
                     if (newestOffset <= request.getPullFromThisOffset()) {
                         newestOffset = this.brokerController.getMessageStore().getMaxOffsetInQueue(topic, queueId);
                     }
@@ -174,6 +185,7 @@ public class PullRequestHoldService extends ServiceThread {
                      * 端，否则等待下一次尝试。
                      */
                     if (newestOffset > request.getPullFromThisOffset()) {
+                        //消息过滤
                         boolean match = request.getMessageFilter().isMatchedByConsumeQueue(tagsCode,
                             new ConsumeQueueExt.CqExtUnit(tagsCode, msgStoreTime, filterBitMap));
                         // match by bit map, need eval again when properties is not null.
@@ -183,6 +195,7 @@ public class PullRequestHoldService extends ServiceThread {
 
                         if (match) {
                             try {
+                                //执行唤醒操作
                                 this.brokerController.getPullMessageProcessor().executeRequestWhenWakeup(request.getClientChannel(),
                                     request.getRequestCommand());
                             } catch (Throwable e) {
@@ -203,10 +216,10 @@ public class PullRequestHoldService extends ServiceThread {
                         }
                         continue;
                     }
-
+                    //添加到重试等待列表
                     replayList.add(request);
                 }
-
+                //添加到等待列表
                 if (!replayList.isEmpty()) {
                     mpr.addPullRequest(replayList);
                 }

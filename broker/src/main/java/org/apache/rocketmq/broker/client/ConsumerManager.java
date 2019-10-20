@@ -33,11 +33,17 @@ import org.apache.rocketmq.common.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.common.RemotingHelper;
 import org.apache.rocketmq.remoting.common.RemotingUtil;
 
+/**
+ * 消费者管理类
+ */
 public class ConsumerManager {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
+    //渠道超时时间
     private static final long CHANNEL_EXPIRED_TIMEOUT = 1000 * 120;
+    //组，消费组信息
     private final ConcurrentMap<String/* Group */, ConsumerGroupInfo> consumerTable =
         new ConcurrentHashMap<String, ConsumerGroupInfo>(1024);
+    //消费渠道变化监听
     private final ConsumerIdsChangeListener consumerIdsChangeListener;
 
     public ConsumerManager(final ConsumerIdsChangeListener consumerIdsChangeListener) {
@@ -74,14 +80,23 @@ public class ConsumerManager {
         return 0;
     }
 
+    /**
+     * 渠道关闭
+     * @param remoteAddr
+     * @param channel
+     */
     public void doChannelCloseEvent(final String remoteAddr, final Channel channel) {
+        //获取所有消费组信息
         Iterator<Entry<String, ConsumerGroupInfo>> it = this.consumerTable.entrySet().iterator();
         while (it.hasNext()) {
             Entry<String, ConsumerGroupInfo> next = it.next();
             ConsumerGroupInfo info = next.getValue();
+            //删除指定渠道
             boolean removed = info.doChannelCloseEvent(remoteAddr, channel);
             if (removed) {
+                //删除后，如果消费组没有渠道
                 if (info.getChannelInfoTable().isEmpty()) {
+                    //则删除消费组
                     ConsumerGroupInfo remove = this.consumerTable.remove(next.getKey());
                     if (remove != null) {
                         log.info("unregister consumer ok, no any connection, and remove consumer group, {}",
@@ -89,7 +104,7 @@ public class ConsumerManager {
                         this.consumerIdsChangeListener.handle(ConsumerGroupEvent.UNREGISTER, next.getKey());
                     }
                 }
-
+                //执行渠道变更监听
                 this.consumerIdsChangeListener.handle(ConsumerGroupEvent.CHANGE, next.getKey(), info.getAllChannel());
             }
         }

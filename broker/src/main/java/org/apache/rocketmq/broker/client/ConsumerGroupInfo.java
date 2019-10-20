@@ -32,16 +32,26 @@ import org.apache.rocketmq.common.protocol.heartbeat.ConsumeType;
 import org.apache.rocketmq.common.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.common.protocol.heartbeat.SubscriptionData;
 
+/**
+ * 消费组信息类
+ */
 public class ConsumerGroupInfo {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
+    //组名
     private final String groupName;
+    //消息主题，订阅信息数据
     private final ConcurrentMap<String/* Topic */, SubscriptionData> subscriptionTable =
         new ConcurrentHashMap<String, SubscriptionData>();
+    //渠道，客户端渠道信息
     private final ConcurrentMap<Channel, ClientChannelInfo> channelInfoTable =
         new ConcurrentHashMap<Channel, ClientChannelInfo>(16);
+    //消费类型
     private volatile ConsumeType consumeType;
+    //消息消费模式
     private volatile MessageModel messageModel;
+    //消费位置
     private volatile ConsumeFromWhere consumeFromWhere;
+    //最新更新时间
     private volatile long lastUpdateTimestamp = System.currentTimeMillis();
 
     public ConsumerGroupInfo(String groupName, ConsumeType consumeType, MessageModel messageModel,
@@ -101,7 +111,14 @@ public class ConsumerGroupInfo {
         }
     }
 
+    /**
+     * 执行渠道关闭
+     * @param remoteAddr
+     * @param channel
+     * @return
+     */
     public boolean doChannelCloseEvent(final String remoteAddr, final Channel channel) {
+        //从渠道列表中删除，并返回客户端信息
         final ClientChannelInfo info = this.channelInfoTable.remove(channel);
         if (info != null) {
             log.warn(

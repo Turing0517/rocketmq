@@ -35,14 +35,23 @@ import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.remoting.common.RemotingHelper;
 import org.apache.rocketmq.remoting.common.RemotingUtil;
 
+/**
+ * 生产者管理类
+ */
 public class ProducerManager {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
+    //锁超时时间
     private static final long LOCK_TIMEOUT_MILLIS = 3000;
+    //渠道超时时间
     private static final long CHANNEL_EXPIRED_TIMEOUT = 1000 * 120;
+    //获取可用渠道，重试次数
     private static final int GET_AVALIABLE_CHANNEL_RETRY_COUNT = 3;
+    //重入锁
     private final Lock groupChannelLock = new ReentrantLock();
+    //组渠道列表，组名  ，渠道以及客户端渠道信息
     private final HashMap<String /* group name */, HashMap<Channel, ClientChannelInfo>> groupChannelTable =
         new HashMap<String, HashMap<Channel, ClientChannelInfo>>();
+    //计数器
     private PositiveAtomicCounter positiveAtomicCounter = new PositiveAtomicCounter();
     public ProducerManager() {
     }
@@ -64,6 +73,9 @@ public class ProducerManager {
         return newGroupChannelTable;
     }
 
+    /**
+     * 扫描不可用渠道
+     */
     public void scanNotActiveChannel() {
         try {
             if (this.groupChannelLock.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
@@ -100,6 +112,11 @@ public class ProducerManager {
         }
     }
 
+    /**
+     * 执行渠道关闭
+     * @param remoteAddr
+     * @param channel
+     */
     public void doChannelCloseEvent(final String remoteAddr, final Channel channel) {
         if (channel != null) {
             try {

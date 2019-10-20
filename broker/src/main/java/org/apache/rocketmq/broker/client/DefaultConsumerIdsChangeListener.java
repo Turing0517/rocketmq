@@ -31,6 +31,12 @@ public class DefaultConsumerIdsChangeListener implements ConsumerIdsChangeListen
         this.brokerController = brokerController;
     }
 
+    /**
+     *
+     * @param event 消费组事件
+     * @param group
+     * @param args
+     */
     @Override
     public void handle(ConsumerGroupEvent event, String group, Object... args) {
         if (event == null) {

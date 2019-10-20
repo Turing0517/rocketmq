@@ -163,7 +163,13 @@ public class BrokerController {
     private AbstractTransactionalMessageCheckListener transactionalMessageCheckListener;
     private Future<?> slaveSyncFuture;
 
-
+    /**
+     * broker构造方法
+     * @param brokerConfig broker配置
+     * @param nettyServerConfig netty服务配置
+     * @param nettyClientConfig netty客户端配置
+     * @param messageStoreConfig 消息存储配置
+     */
     public BrokerController(
         final BrokerConfig brokerConfig,
         final NettyServerConfig nettyServerConfig,
@@ -174,35 +180,57 @@ public class BrokerController {
         this.nettyServerConfig = nettyServerConfig;
         this.nettyClientConfig = nettyClientConfig;
         this.messageStoreConfig = messageStoreConfig;
+        //创建消费偏移量管理类
         this.consumerOffsetManager = new ConsumerOffsetManager(this);
+        //创建主题配置管理类
         this.topicConfigManager = new TopicConfigManager(this);
+        //创建拉取消息处理器
         this.pullMessageProcessor = new PullMessageProcessor(this);
+        //长轮询hold服务
         this.pullRequestHoldService = new PullRequestHoldService(this);
+        //消息到达监听
         this.messageArrivingListener = new NotifyMessageArrivingListener(this.pullRequestHoldService);
+        //消费空闲监听
         this.consumerIdsChangeListener = new DefaultConsumerIdsChangeListener(this);
+        //消费者管理
         this.consumerManager = new ConsumerManager(this.consumerIdsChangeListener);
+        //消费者过滤器管理
         this.consumerFilterManager = new ConsumerFilterManager(this);
+        //生产者管理类
         this.producerManager = new ProducerManager();
+
         this.clientHousekeepingService = new ClientHousekeepingService(this);
+        //
         this.broker2Client = new Broker2Client(this);
+        //订阅组信息管理
         this.subscriptionGroupManager = new SubscriptionGroupManager(this);
+        //
         this.brokerOuterAPI = new BrokerOuterAPI(nettyClientConfig);
+        //过滤服务管理类
         this.filterServerManager = new FilterServerManager(this);
-
+        //从节点同步
         this.slaveSynchronize = new SlaveSynchronize(this);
-
+        //发送线程池队列
         this.sendThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getSendThreadPoolQueueCapacity());
+        //拉取消息线程池队列
         this.pullThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getPullThreadPoolQueueCapacity());
+        //查询消息线程池队列
         this.queryThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getQueryThreadPoolQueueCapacity());
+        //客户端管理线程池队列
         this.clientManagerThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getClientManagerThreadPoolQueueCapacity());
+        //消费管理线程池队列
         this.consumerManagerThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getConsumerManagerThreadPoolQueueCapacity());
+       //心跳线程池队列
         this.heartbeatThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getHeartbeatThreadPoolQueueCapacity());
+        //事务消息线程池队列
         this.endTransactionThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getEndTransactionPoolQueueCapacity());
-
+        //broker状态管理
         this.brokerStatsManager = new BrokerStatsManager(this.brokerConfig.getBrokerClusterName());
+        //设置broker主机信息
         this.setStoreHost(new InetSocketAddress(this.getBrokerConfig().getBrokerIP1(), this.getNettyServerConfig().getListenPort()));
-
+        //broker快速失败
         this.brokerFastFailure = new BrokerFastFailure(this);
+        //配置
         this.configuration = new Configuration(
             log,
             BrokerPathConfigHelper.getBrokerConfigPath(),
@@ -225,16 +253,20 @@ public class BrokerController {
     public BlockingQueue<Runnable> getQueryThreadPoolQueue() {
         return queryThreadPoolQueue;
     }
-
+    //broker初始化
     public boolean initialize() throws CloneNotSupportedException {
+        //主题管理载入
         boolean result = this.topicConfigManager.load();
-
+        //消费管理载入
         result = result && this.consumerOffsetManager.load();
+        //订阅组管理载入
         result = result && this.subscriptionGroupManager.load();
+        //消费过滤器载入
         result = result && this.consumerFilterManager.load();
 
         if (result) {
             try {
+                //创建默认消息存储
                 this.messageStore =
                     new DefaultMessageStore(this.messageStoreConfig, this.brokerStatsManager, this.messageArrivingListener,
                         this.brokerConfig);
@@ -243,7 +275,7 @@ public class BrokerController {
                     ((DLedgerCommitLog)((DefaultMessageStore) messageStore).getCommitLog()).getdLedgerServer().getdLedgerLeaderElector().addRoleChangeHandler(roleChangeHandler);
                 }
                 this.brokerStats = new BrokerStats((DefaultMessageStore) this.messageStore);
-                //load plugin
+                //load plugin 载入插件
                 MessageStorePluginContext context = new MessageStorePluginContext(messageStoreConfig, brokerStatsManager, messageArrivingListener, brokerConfig);
                 this.messageStore = MessageStoreFactory.build(context, this.messageStore);
                 this.messageStore.getDispatcherList().addFirst(new CommitLogDispatcherCalcBitMap(this.brokerConfig, this.consumerFilterManager));

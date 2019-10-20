@@ -141,7 +141,7 @@ public class BrokerConfig {
     //how long to clean filter data after dead.Default: 24h
     private long filterDataCleanTimeSpan = 24 * 3600 * 1000;
 
-    // whether do filter when retry.
+    // whether do filter when retry. 当重试的时候是否过滤
     private boolean filterSupportRetry = false;
     private boolean enablePropertyFilter = false;
 
